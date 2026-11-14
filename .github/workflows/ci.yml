@@ -1,0 +1,158 @@
+name: CI
+
+# Every push and pull request: test the database, test the app, check the web app
+# end to end, and build an installable Android APK.
+
+on:
+  push:
+    branches: [main, 'phase-*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    name: Database tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v5
+      - name: Apply migrations and run the tests
+        run: bash supabase/tests/run.sh
+
+  app:
+    name: App tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint (includes the no-rounded-corners rule)
+        run: npm run lint
+      - name: Unit and screen tests
+        run: npm test
+      - name: Bundle for Android
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          EXPO_PUBLIC_SUPABASE_KEY: sb_publishable_placeholder_for_bundle_check
+        run: npx expo export --platform android --output-dir dist-check
+
+  web-e2e:
+    name: Web end-to-end
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: pip install playwright
+      - name: Drive the web app in Chrome against a real database
+        env:
+          E2E_SHOTS: ${{ runner.temp }}/e2e-screens
+          E2E_API_LOG: ${{ runner.temp }}/e2e-api.log
+        run: bash scripts/e2e/run.sh
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: web-e2e-screens
+          path: |
+            ${{ runner.temp }}/e2e-screens
+            ${{ runner.temp }}/e2e-api.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    needs: [app]
+    permissions:
+      contents: write
+    env:
+      # Public values (the key is the publishable one). Set them under
+      # Settings > Secrets and variables > Actions > Variables. See docs/SETUP.md.
+      EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v5
+      - run: npm ci
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --no-install
+      - name: Build the APK (64-bit ARM, which every current phone uses)
+        working-directory: android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --stacktrace
+      - name: Name the APK
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk "out/taskflow-${GITHUB_SHA::7}.apk"
+          ls -la out
+      - uses: actions/upload-artifact@v5
+        with:
+          name: taskflow-apk
+          path: out/*.apk
+          retention-days: 30
+      - name: Publish as the latest build (main only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp out/*.apk out/taskflow-latest.apk
+          notes="Built from ${GITHUB_SHA::7}. Download taskflow-latest.apk on the phone and open it to install."
+          if gh release view latest-build >/dev/null 2>&1; then
+            gh release upload latest-build out/taskflow-latest.apk --clobber
+            gh release edit latest-build --notes "$notes" --prerelease
+          else
+            gh release create latest-build out/taskflow-latest.apk --title "Latest build" --notes "$notes" --prerelease
+          fi

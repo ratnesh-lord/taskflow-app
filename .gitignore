@@ -1,21 +1,45 @@
+# dependencies
 node_modules/
+
+# Expo
 .expo/
 dist/
+dist-check/
+dist-e2e/
 web-build/
-android/
-ios/
+expo-env.d.ts
+
+# generated native folders (made by `expo prebuild`; never edited by hand)
+/android
+/ios
+.kotlin/
+
+# build outputs and signing material
 *.apk
 *.aab
+*.jks
 *.keystore
-!debug.keystore
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+google-services.json
+
+# local settings: never commit real keys
 .env
 .env.local
 .env.*.local
-npm-debug.*
-yarn-error.*
-*.tsbuildinfo
-coverage/
-.DS_Store
+
+# Supabase CLI working files
 supabase/.temp/
 supabase/.branches/
-google-services.json
+
+# tooling
+*.tsbuildinfo
+coverage/
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store

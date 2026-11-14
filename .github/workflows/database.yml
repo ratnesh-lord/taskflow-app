@@ -1,0 +1,38 @@
+name: Apply database migrations
+
+# Brings your Supabase database up to date with supabase/migrations.
+# Runs when migrations change on main, or by hand: Actions > Apply database
+# migrations > Run workflow. Each migration is applied once and recorded, so
+# running this again is always safe.
+#
+# Needs the repository secret SUPABASE_DB_URL: the "Session pooler" connection
+# string from the Supabase project's Connect dialog, with the database password
+# filled in. See docs/SETUP.md.
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/migrations/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      PGURL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Apply migrations
+        run: |
+          if [ -z "$PGURL" ]; then
+            echo "::warning::SUPABASE_DB_URL is not set, so nothing was applied. See docs/SETUP.md."
+            exit 0
+          fi
+          bash scripts/db/migrate.sh "$PGURL"

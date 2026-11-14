@@ -1,0 +1,73 @@
+name: Daily maintenance
+
+# Three jobs the free Supabase plan does not do for you:
+#   1. touch the database, so the project is never paused for inactivity
+#   2. purge deleted rows and history older than 90 days
+#   3. save an encrypted backup
+#
+# Needs two repository secrets (Settings > Secrets and variables > Actions > Secrets):
+#   SUPABASE_DB_URL     the "Session pooler" connection string, with the database password
+#   BACKUP_PASSPHRASE   a long passphrase of your own; without it no backup is made,
+#                       because this repository's build files are visible to others
+# Until SUPABASE_DB_URL is set, the workflow does nothing. See docs/SETUP.md.
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    env:
+      PGURL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check configuration
+        id: config
+        run: |
+          if [ -z "$PGURL" ]; then
+            echo "SUPABASE_DB_URL is not set: nothing to do."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Touch the database and purge expired rows
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          docker run --rm -e PGURL postgres:17 \
+            psql "$PGURL" -v ON_ERROR_STOP=1 -At \
+            -c "select 'purged rows: ' || public.purge_expired(90)" \
+            -c "select 'users: ' || count(*) from public.profiles"
+
+      - name: Dump the database
+        if: steps.config.outputs.ready == 'true' && env.BACKUP_PASSPHRASE != ''
+        run: |
+          mkdir -p backup
+          docker run --rm -e PGURL postgres:17 \
+            pg_dump "$PGURL" --schema=public --no-owner --no-privileges > backup/public.sql
+          docker run --rm -e PGURL postgres:17 \
+            pg_dump "$PGURL" --data-only --table=auth.users --table=auth.identities > backup/accounts.sql
+          test -s backup/public.sql
+          stamp="$(date -u +%Y-%m-%d)"
+          tar czf - -C backup public.sql accounts.sql \
+            | gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
+                  --passphrase "$BACKUP_PASSPHRASE" -o "taskflow-backup-${stamp}.tar.gz.gpg"
+          rm -rf backup
+          ls -la taskflow-backup-*.gpg
+
+      - name: Keep the encrypted backup for 30 days
+        if: steps.config.outputs.ready == 'true' && env.BACKUP_PASSPHRASE != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: taskflow-backup
+          path: taskflow-backup-*.tar.gz.gpg
+          retention-days: 30
+
+      - name: Explain a skipped backup
+        if: steps.config.outputs.ready == 'true' && env.BACKUP_PASSPHRASE == ''
+        run: echo "::warning::BACKUP_PASSPHRASE is not set, so no backup was made."
