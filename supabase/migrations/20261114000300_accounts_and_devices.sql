@@ -77,6 +77,8 @@ create policy devices_delete_own on public.devices
 -- register_device: called at sign-in and whenever the push token changes.
 -- If this phone's token was registered under another account (someone signed
 -- out and a different person signed in), the old row is replaced.
+-- Calling it without a token keeps the token already stored; signing out
+-- deletes the row, which is how a token is forgotten.
 create function public.register_device(
   p_device_id   uuid,
   p_platform    text,
@@ -108,7 +110,7 @@ begin
     set platform = excluded.platform,
         name = excluded.name,
         app_version = excluded.app_version,
-        push_token = excluded.push_token,
+        push_token = coalesce(excluded.push_token, d.push_token),
         last_seen_at = now();
 end;
 $$;

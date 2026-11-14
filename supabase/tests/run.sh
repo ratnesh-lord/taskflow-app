@@ -7,17 +7,10 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 db="taskflow_test_$$"
 
-psql -v ON_ERROR_STOP=1 -q -d postgres -c "create database ${db}"
 trap 'psql -q -d postgres -c "drop database if exists ${db}" >/dev/null 2>&1 || true' EXIT
+bash "${here}/setup-db.sh" "${db}"
 
 run() { psql -v ON_ERROR_STOP=1 -q -d "${db}" -f "$1" 2>&1 | sed -e 's/^psql:[^ ]* NOTICE:  //'; return "${PIPESTATUS[0]}"; }
-
-run "${here}/support/supabase_shim.sql"
-for f in "${here}"/../migrations/*.sql; do
-  echo "migrate $(basename "$f")"
-  run "$f"
-done
-run "${here}/support/helpers.sql"
 
 for f in "${here}"/*.test.sql; do
   echo

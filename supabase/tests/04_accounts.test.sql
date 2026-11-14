@@ -40,6 +40,9 @@ begin
   perform public.register_device(phone, 'android', 'Nothing Phone (2a)', '0.1.1', 'token-2');
   select count(*) into n from public.devices where user_id = a;
   perform test.ok(n = 1, 'registering again updates the same row');
+  perform public.register_device(phone, 'android', 'Nothing Phone (2a)', '0.1.2');
+  select count(*) into n from public.devices where id = phone and push_token = 'token-2' and app_version = '0.1.2';
+  perform test.ok(n = 1, 'registering without a token keeps the stored token');
   perform test.throws(format('select public.register_device(%L, ''toaster'')', gen_random_uuid()), 'check constraint',
                       'an unknown platform is refused');
 
