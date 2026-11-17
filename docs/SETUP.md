@@ -41,12 +41,16 @@ Running the workflow again is harmless: each migration is applied once.
 1. In Supabase click **Connect** again and copy the **Project URL** (`https://abcdefgh.supabase.co`).
 2. Open **Settings > API Keys** and copy the **Publishable key** (it starts with `sb_publishable_`).
    If the page only offers legacy keys, the `anon` key works too.
-3. In GitHub open **Settings > Secrets and variables > Actions > Variables** (the Variables tab, not Secrets) and add:
+3. In GitHub open **Settings > Secrets and variables > Actions**, choose the **Variables** tab, click **New repository variable** and add these two, one at a time. The names must match exactly.
 
-   | Variable | Value |
+   | Name | Value |
    | --- | --- |
-   | `EXPO_PUBLIC_SUPABASE_URL` | the Project URL |
+   | `EXPO_PUBLIC_SUPABASE_URL` | the Project URL: only the address, with nothing after `.supabase.co` |
    | `EXPO_PUBLIC_SUPABASE_KEY` | the publishable key |
+
+   If you saved them on the **Secrets** tab instead, that works too.
+
+Every Android build checks these two values first and asks your project whether it accepts the key. A build from `main` with a missing or wrong value stops within a minute, and its error message says which value to fix and how.
 
 Both values are public by design: they ship inside every copy of the app. What protects your data is row-level security in the database. The **secret** key (`sb_secret_...`, or the legacy `service_role` key) must never be put in the app, in these variables or in the repository.
 
@@ -73,12 +77,17 @@ Email and password sign-in works without any of this.
 
 ## 7. Build and install
 
-1. Merge to `main`, or open **Actions > CI > Run workflow**. The build takes roughly 15 to 25 minutes the first time.
-2. On the phone open the repository's **Releases** page, tap **Latest build**, download `taskflow-latest.apk` and open it. Android asks once to allow installs from your browser.
+1. Merge to `main`, or open **Actions > CI > Run workflow** and run it on `main`. Either way the build is published when it finishes, about 10 to 25 minutes later.
+2. On the phone open this link, which always downloads the newest build:
+   https://github.com/ratnesh-lord/taskflow-app/releases/download/latest-build/taskflow-latest.apk
+   (or open the repository's **Releases** page and tap **TaskFlow latest build**). Open the download. Android asks once to allow installs from your browser.
+   The release notes say which Supabase project the build connects to and whether Google sign-in is on.
 3. Open TaskFlow, create an account or sign in.
 4. Go to **More > Check connection**. Four green ticks mean sign-in, the access rules and sync all work from your phone.
 
-If the app opens on a screen titled **Not connected yet**, the two variables from step 4 were missing when the APK was built. Add them and build again.
+A new build installs over the previous one; you stay signed in.
+
+If the app opens on a screen titled **Not connected yet**, it was built before the two values from step 4 were set (builds from before 17 November never checked them). Set them and run the workflow again.
 
 ## 8. Check the daily maintenance job
 

@@ -23,12 +23,19 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - 197 database assertions pass on Postgres 16 (locally) and are set to run on Postgres 17 in CI.
 - 37 unit and screen tests pass.
 - 30 web end-to-end checks pass in headless Chrome against a real Postgres.
+- 17 checks of the app-settings check, against a stand-in for Supabase's sign-in service.
 - The Android JavaScript bundle builds, and `expo prebuild` generates the Android project with the `taskflow://` link registered.
 
 ### Not yet proven
 
 - **The APK itself.** It cannot be compiled where the code was written; GitHub Actions does it. The first build may need fixes.
 - **Anything that needs your Supabase project:** real sign-in, Google sign-in, the migration workflow against Supabase, the maintenance workflow. Each is a line in the phone checklist in [TESTING.md](TESTING.md) or a step in [SETUP.md](SETUP.md).
+
+### Fixed after release (17 November)
+
+- Manual runs of the CI workflow built an APK but never published it; only pushes to `main` did. Manual runs on `main` now publish too, as the repository's **Latest** release rather than a pre-release.
+- Both APKs built so far had an empty Supabase address and key, so they opened on "Not connected yet", and nothing flagged it. The Android build now checks both values first, asks the project whether it accepts the key, and stops a build from `main` within a minute if anything is wrong. It also refuses a secret key outright. The values may be saved as repository variables or as secrets.
+- The first migration run failed because its connection string was the direct connection, which GitHub's servers cannot reach; the session pooler string worked, and all five migrations are applied. The nightly job has since purged and saved an encrypted backup.
 
 ### Changes from the Phase 1 document
 
