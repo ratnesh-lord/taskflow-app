@@ -29,7 +29,9 @@ scripts/e2e/          drives the web app in Chrome against a real database
 ## Getting the app onto your phone
 
 1. Follow [docs/SETUP.md](docs/SETUP.md) once (about 30 minutes, all free).
-2. Every push to `main` builds an APK. Open **Releases > Latest build** on the phone, download `taskflow-latest.apk` and open it.
+2. Every push to `main`, and every manual run of the CI workflow on `main`, publishes an APK. On the phone, open
+   https://github.com/ratnesh-lord/taskflow-app/releases/download/latest-build/taskflow-latest.apk
+   and open the download.
 
 ## Working on it
 

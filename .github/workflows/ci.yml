@@ -55,6 +55,8 @@ jobs:
         run: npm run lint
       - name: Unit and screen tests
         run: npm test
+      - name: Tests for the app-settings check
+        run: bash scripts/ci/check-app-settings.test.sh
       - name: Bundle for Android
         env:
           EXPO_PUBLIC_SUPABASE_URL: https://example.supabase.co
@@ -112,12 +114,18 @@ jobs:
     permissions:
       contents: write
     env:
-      # Public values (the key is the publishable one). Set them under
-      # Settings > Secrets and variables > Actions > Variables. See docs/SETUP.md.
-      EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
-      EXPO_PUBLIC_SUPABASE_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_KEY }}
+      # The two values built into the app. Both are public by design (the key is
+      # the publishable one). They belong under Settings > Secrets and variables >
+      # Actions > Variables; saved as secrets instead, they are picked up too.
+      EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL || secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_KEY || secrets.EXPO_PUBLIC_SUPABASE_KEY }}
     steps:
       - uses: actions/checkout@v5
+      - name: Check the app's Supabase settings
+        id: settings
+        # Builds from main get published, so wrong settings stop them here, in
+        # seconds, with a message saying what to fix. Other builds only warn.
+        run: bash scripts/ci/check-app-settings.sh ${{ github.ref == 'refs/heads/main' && 'strict' || 'warn' }}
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -143,16 +151,23 @@ jobs:
           name: taskflow-apk
           path: out/*.apk
           retention-days: 30
-      - name: Publish as the latest build (main only)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Publish as the Latest release (main only, pushes and manual runs)
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
+          APP_HOST: ${{ steps.settings.outputs.host }}
+          GOOGLE: ${{ steps.settings.outputs.google }}
+          CONFIRM_EMAIL: ${{ steps.settings.outputs.confirm_email }}
         run: |
-          cp out/*.apk out/taskflow-latest.apk
-          notes="Built from ${GITHUB_SHA::7}. Download taskflow-latest.apk on the phone and open it to install."
-          if gh release view latest-build >/dev/null 2>&1; then
-            gh release upload latest-build out/taskflow-latest.apk --clobber
-            gh release edit latest-build --notes "$notes" --prerelease
-          else
-            gh release create latest-build out/taskflow-latest.apk --title "Latest build" --notes "$notes" --prerelease
-          fi
+          cp out/taskflow-*.apk out/taskflow-latest.apk
+          {
+            echo "Built from ${GITHUB_SHA::7} on $(date -u '+%d %b %Y, %H:%M UTC')."
+            echo
+            echo "Connects to ${APP_HOST}. Google sign-in: ${GOOGLE}. Email confirmation: ${CONFIRM_EMAIL}."
+            echo
+            echo "**To install or update:** open this page on the phone, tap **taskflow-latest.apk**, then open the download. A new build installs over the previous one."
+          } > release-notes.md
+          # Replace the previous build, so the release and its tag always point at this commit.
+          gh release delete latest-build --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest-build out/taskflow-latest.apk \
+            --target "$GITHUB_SHA" --title "TaskFlow latest build" --notes-file release-notes.md --latest

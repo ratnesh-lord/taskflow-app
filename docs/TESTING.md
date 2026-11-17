@@ -1,6 +1,6 @@
 # Testing
 
-Four layers of automated checks run on every push (GitHub Actions, workflow **CI**). A fifth layer is a short checklist on the real phone, because some things only a phone can prove.
+Five layers of automated checks run on every push (GitHub Actions, workflow **CI**). A fifth layer is a short checklist on the real phone, because some things only a phone can prove.
 
 | Layer | What it proves | Run it yourself |
 | --- | --- | --- |
@@ -8,6 +8,7 @@ Four layers of automated checks run on every push (GitHub Actions, workflow **CI
 | Unit and screen tests | The edit clock, sign-in link parsing, session storage, and the sign-in and sign-up screens | `npm test` |
 | Typecheck and lint | Types are sound; no rounded corner anywhere in the code | `npm run typecheck`, `npm run lint` |
 | Web end-to-end | The built web app, driven in Chrome: sign in, tabs, dark mode, sign out, and a real push and pull through the database | `bash scripts/e2e/run.sh` |
+| App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
 | Android build | The app compiles and packages into an installable APK | GitHub Actions only |
 
 ## What the database tests cover
