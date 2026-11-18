@@ -2,7 +2,7 @@
 
 A personal productivity app: tasks, reminders, projects, recurring work and home-screen widgets on Android, with a web view of the same data and cloud sync through Supabase. Built to run on free tiers.
 
-**Status:** Phase 3 of 10. Tasks work fully on one device, offline: quick add in plain English, repeats, projects, categories, tags, subtasks, filters and search. Syncing them between devices is Phase 4, and phone alerts for reminders are Phase 5. See [docs/PROGRESS.md](docs/PROGRESS.md).
+**Status:** Phase 4 of 10. Tasks work offline on each device and sync between your devices through your account, live: quick add in plain English, repeats, projects, categories, tags, subtasks, filters, search, export and restore. Phone alerts for reminders are Phase 5. See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 | | |
 | --- | --- |

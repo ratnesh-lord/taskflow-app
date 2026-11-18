@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { signOut } from '@/platform/auth';
+import { BackupPanel } from '@/components/BackupPanel';
 import { SyncPanel } from '@/components/SyncPanel';
 import { useData } from '@/state/data';
 import { useSession } from '@/state/session';
@@ -80,6 +81,8 @@ export default function More() {
       </View>
 
       <SyncPanel />
+
+      <BackupPanel />
 
       <Divider />
 

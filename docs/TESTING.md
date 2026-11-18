@@ -4,10 +4,10 @@ Six layers of automated checks run on every push (GitHub Actions, workflow **CI*
 
 | Layer | What it proves | Run it yourself |
 | --- | --- | --- |
-| Database tests | Access rules, merging, paging, purge, concurrency, on a real Postgres with the project's migrations | `npm run test:db` |
-| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
+| Database tests | Access rules, merging, paging, purge, concurrency, on a real Postgres with the project's migrations; then the app's sync engine with two devices against those same functions | `npm run test:db` (after `npm ci`) |
+| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
 | Typecheck and lint | Types are sound; no rounded corner anywhere in the code | `npm run typecheck`, `npm run lint` |
-| Web end-to-end | The built web app, driven in Chrome: sign in, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, dark mode, sign out, and a real push and pull through the database | `bash scripts/e2e/run.sh` |
+| Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, sign out | `bash scripts/e2e/run.sh` |
 | App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
 | Android build | The app compiles and packages into an installable APK | GitHub Actions only |
 
@@ -20,6 +20,7 @@ Six layers of automated checks run on every push (GitHub Actions, workflow **CI*
 - **`03_pull.test.sql`** pages through changes ten at a time and checks every row arrives exactly once, then covers incremental pulls, tombstones, the 90-day purge and the forced resync that follows it.
 - **`04_accounts.test.sql`** covers profile creation, device registration and account deletion.
 - **`concurrency.sh`** runs two writers at the same moment and a reader between them, twice. It checks revisions are committed in order and the reader's cursor skips nothing.
+- **`src/data/sync.db.test.ts`** (run last, through Jest) gives two simulated devices their own SQLite databases and syncs them through `sync_push` and `sync_pull` in the same throwaway database, as the signed-in user. It covers the cases listed under Phase 4 in [PROGRESS.md](PROGRESS.md), and checks the app's tables match the server's exactly.
 
 To run them you need `psql` and a Postgres server you can create databases on:
 
@@ -29,11 +30,22 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres npm run test:db
 
 ## What the web end-to-end check covers
 
-`scripts/e2e/run.sh` builds the web app, starts a throwaway database, and starts `mock-supabase.mjs`: a stand-in sign-in service whose database calls are forwarded to that real Postgres as the signed-in user. Headless Chrome then uses the app like a person would. Among its checks: the brief's quick-add sentence becomes the right title, time and reminder; a task dated three days ago is overdue and can be completed and undone; a daily repeat keeps its next seven days after one is ticked; filters and saved filters work; tasks survive a full reload; a wrong password is explained, the connection check on the More screen passes, the pushed edit is really in the database with a history entry, dark mode survives a reload, signing out removes the device, and no element on any screen has a rounded corner.
+`scripts/e2e/run.sh` builds the web app, starts a throwaway database, and starts `mock-supabase.mjs`: a stand-in sign-in service whose database calls are forwarded to that real Postgres as the signed-in user, with a small stand-in Realtime server that announces changes to the account. Headless Chrome then uses the app like a person would. Among its checks: the brief's quick-add sentence becomes the right title, time and reminder; a task dated three days ago is overdue and can be completed and undone; a daily repeat keeps its next seven days after one is ticked; filters and saved filters work; tasks survive a full reload; a second browser signed in to the same account gets every task and sees new ones appear by itself; a task written offline goes up when the connection is back; two browsers editing different fields of one task both keep both; export downloads a backup and restore brings back a deleted task; a wrong password is explained, dark mode survives a reload, signing out removes the device, and no element on any screen has a rounded corner.
 
 It needs Chrome and `pip install playwright` in addition to the database requirements above. Screenshots are written to `/tmp/taskflow-e2e`.
 
-It does not cover Google sign-in or the real Supabase sign-in service; the phone checklist does.
+It does not cover Google sign-in, the real Supabase sign-in service or the real Realtime service; the phone checklist does.
+
+## Phone checklist for Phase 4
+
+Install the newest APK over the old one. For the two-device steps, run the web app on your computer (`npm run web`, as in [SETUP.md](SETUP.md)) and sign in with the same account.
+
+- [ ] Open the app and go to **More**. Within a few seconds the Sync section says "Synced with your account at …" and "Every change on this device has been sent." (Your Phase 3 tasks have just gone up.)
+- [ ] Sign in on the computer: the phone's tasks are all there, with the same dates, times and completions.
+- [ ] With both open, add a task on the computer. Without touching the phone, it appears there within a few seconds. Then the other way round.
+- [ ] Turn on aeroplane mode, add a task on the phone: Today says it is not synced and the change will go up later. Turn aeroplane mode off and come back to the app: within a few seconds the task is on the computer.
+- [ ] Open the same task on both. Change its priority on the phone and its notes on the computer: after a few seconds both show both changes.
+- [ ] **More → Export all data**: the share sheet opens; save the file to Files or Drive. Delete a task, then **Restore from a backup** with that file: the task comes back, on the computer too.
 
 ## Phone checklist for the fixes after Phase 3
 
@@ -73,8 +85,8 @@ Run these on the phone after [setup](SETUP.md). Each line is something no automa
 | --- | --- | --- |
 | 1 to 3 | Notifications: delivery, app closed, after restart | Phase 5 |
 | 4, 5 | Complete from the widget; widget changes sync | Phase 6 |
-| 6, 7 | Create offline; sync on reconnect | Phase 4 |
-| 8 | Edit the same task on two devices | Database rules tested now; on devices in Phase 4 |
+| 6, 7 | Create offline; sync on reconnect | Tested now: sync engine against the database, and two browsers in the web check; phone checklist below |
+| 8 | Edit the same task on two devices | Tested now: database rules, sync engine with two devices, two browsers; phone checklist below |
 | 9 | Recurring tasks | Repeat rules, completing, skipping and moving one time tested now (unit and web); calendar views in Phase 7 |
 | 10 | Timezone change | Phase 5 |
 | 11 | Overdue calculation | Tested now: unit tests of the rule and the Today counts, and the web check |

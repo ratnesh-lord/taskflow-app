@@ -135,6 +135,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           if (next === 'active') ask('foreground');
         });
         cleanups.push(() => appState.remove());
+        // In a browser, the connection coming back is announced directly.
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+          const online = () => ask('foreground');
+          window.addEventListener('online', online);
+          cleanups.push(() => window.removeEventListener('online', online));
+        }
         const interval = setInterval(() => {
           if (AppState.currentState === 'active') ask('interval');
         }, SAFETY_SYNC_MS);

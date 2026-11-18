@@ -407,7 +407,42 @@ with sync_playwright() as p:
     other_context.close()
     button(page, "Back").click()
 
-    page.get_by_role("tab", name="More").click()
+    # ---- export and restore -----------------------------------------------------------------
+    open_tab(page, "More")
+    with page.expect_download() as download_info:
+        button(page, "Export all data").click()
+    download = download_info.value
+    assert re.fullmatch(r"taskflow-backup-\d{4}-\d\d-\d\d\.json", download.suggested_filename), download.suggested_filename
+    backup_path = f"{SHOTS}/{download.suggested_filename}"
+    download.save_as(backup_path)
+    with open(backup_path) as f:
+        backup = json.load(f)
+    assert backup["format"] == "taskflow-backup" and backup["version"] == 1
+    exported = sorted(t["title"] for t in backup["tables"]["tasks"])
+    assert "Renew passport" in exported and "Written while offline" in exported, exported
+    ok(f"Export all data downloads a backup file with every task ({len(exported)} tasks)")
+
+    open_tab(page, "Today")
+    role(page, "button", re.compile(r"^Written while offline")).first.click()
+    button(page, "Delete").click()
+    expect(role(page, "button", re.compile(r"^Written while offline"))).to_have_count(0)
+    open_tab(page, "More")
+    with page.expect_file_chooser() as chooser_info:
+        button(page, "Restore from a backup").click()
+    chooser_info.value.set_files(backup_path)
+    dialog = page.get_by_role("dialog", name="Restore backup")
+    expect(dialog.get_by_text(re.compile(rf"It holds {len(exported)} tasks"))).to_be_visible()
+    ok("choosing the backup file shows what it holds before anything changes")
+    button(page, "Restore").click()
+    expect(page.get_by_role("alert").filter(has_text="Backup restored").last).to_be_visible()
+    open_tab(page, "Today")
+    expect(role(page, "button", re.compile(r"^Written while offline")).first).to_be_visible()
+    ok("restoring brings back a task deleted after the backup")
+    expect(page.get_by_text("Made on the second device").filter(visible=True).first).to_be_visible()
+    open_tab(page, "More")
+    expect(page.get_by_text("Every change on this device has been sent.").filter(visible=True)).to_be_visible(timeout=15000)
+    assert db(f"select count(*) from public.tasks where user_id = '{user_id}' and title = 'Written while offline' and deleted_at is null") == "1"
+    ok("the restored task is back in the account's database too")
     assert_square(page, "the More screen")
     page.screenshot(path=f"{SHOTS}/04-more-light.png", full_page=True)
 

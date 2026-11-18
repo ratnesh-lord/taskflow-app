@@ -11,6 +11,7 @@ import type { TaskFilter } from '@/core/filters';
 import type { Priority, TaskStatus } from '@/core/types';
 import { isOpenStatus } from '@/core/types';
 
+import { type Backup, makeBackup, restoreBackup } from './backup';
 import { toTask } from './snapshot';
 import type { Row, Store, Tx, UndoLog } from './store';
 
@@ -429,6 +430,16 @@ export class Actions {
   // ---------------------------------------------------------------------------
   // Projects, categories, saved filters
   // ---------------------------------------------------------------------------
+
+  /** Everything in the account, for a backup file. */
+  exportBackup(appVersion?: string): Promise<Backup> {
+    return makeBackup(this.store, { now: this.now(), appVersion });
+  }
+
+  /** Bring every item in a backup back to how it was; returns an undo log. */
+  restoreBackup(backup: Backup): Promise<{ changed: number; undo: UndoLog }> {
+    return restoreBackup(this.store, backup);
+  }
 
   /**
    * Keep the account's time zone in step with this device (Phase 5 uses it for
