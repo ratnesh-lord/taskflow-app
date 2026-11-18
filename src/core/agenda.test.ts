@@ -1,4 +1,4 @@
-import { completedOn, isOverdue, itemOf, nextReminder, todayView, upcomingView, type Snapshot } from './agenda';
+import { completedByDay, completedOn, isOverdue, itemOf, nextReminder, progressOf, todayView, upcomingView, type Snapshot } from './agenda';
 import { makeTask } from './fixtures';
 import type { OccurrenceRecord } from './recurrence';
 
@@ -117,5 +117,52 @@ describe('the next reminder', () => {
     expect(next?.item.task.id).toBe(t1.id);
     expect(next?.at.getHours()).toBe(18);
     expect(next?.at.getMinutes()).toBe(30);
+  });
+});
+
+describe('project progress', () => {
+  it('counts done, open and overdue tasks, leaving archived ones out', () => {
+    const items = [
+      makeTask({ id: 'a', status: 'completed', completedAt: '2026-11-10T10:00:00Z' }),
+      makeTask({ id: 'b', dueDate: '2026-11-12' }),
+      makeTask({ id: 'c', dueDate: '2026-11-20' }),
+      makeTask({ id: 'd', status: 'archived' }),
+    ].map((t) => itemOf(t, [], now));
+    expect(progressOf(items)).toEqual({ total: 3, done: 1, open: 2, overdue: 1, percent: 33 });
+  });
+
+  it('a repeating task stays open after an occurrence is done', () => {
+    const t = makeTask({ id: 'r', dueDate: '2026-11-13', rrule: 'FREQ=DAILY' });
+    const item = itemOf(t, [{ date: '2026-11-13', status: 'completed', completedAt: '2026-11-13T09:00:00Z' }], now);
+    expect(progressOf([item])).toEqual({ total: 1, done: 0, open: 1, overdue: 0, percent: 0 });
+  });
+
+  it('an empty project is at 0%', () => {
+    expect(progressOf([]).percent).toBe(0);
+  });
+});
+
+describe('completed history', () => {
+  it('groups one-off tasks and repeat occurrences by completion day, newest first', () => {
+    const data = snap(
+      [
+        makeTask({ id: 'a', status: 'completed', completedAt: '2026-11-12T08:00:00Z' }),
+        makeTask({ id: 'b', status: 'completed', completedAt: '2026-11-14T09:00:00Z' }),
+        makeTask({ id: 'r', dueDate: '2026-11-12', rrule: 'FREQ=DAILY' }),
+      ],
+      {
+        r: [
+          { date: '2026-11-12', status: 'completed', completedAt: '2026-11-12T20:00:00Z' },
+          { date: '2026-11-13', status: 'skipped' },
+          { date: '2026-11-14', status: 'completed', completedAt: '2026-11-14T07:00:00Z' },
+        ],
+      },
+    );
+    const groups = completedByDay(data, toLocal);
+    expect(groups.map((g) => [g.date, g.items.map((i) => i.key)])).toEqual([
+      ['2026-11-14', ['b', 'r@2026-11-14']],
+      ['2026-11-12', ['r@2026-11-12', 'a']],
+    ]);
+    expect(completedOn(data, '2026-11-14', toLocal).map((i) => i.key)).toEqual(['r@2026-11-14', 'b']);
   });
 });

@@ -136,27 +136,44 @@ export function allItems(data: Snapshot, now: Now): TaskItem[] {
   return data.tasks.map((t) => itemOf(t, data.occurrences.get(t.id) ?? NONE, now));
 }
 
-/** Everything completed on the given day: one-off tasks and occurrences of repeating ones. */
-export function completedOn(data: Snapshot, day: LocalDate, toLocal: ToLocalDate): TaskItem[] {
+/** Everything ever completed: one-off tasks and each completed occurrence of repeating ones, newest first. */
+export function completedItems(data: Snapshot): TaskItem[] {
   const out: TaskItem[] = [];
   for (const task of data.tasks) {
     if (seriesOf(task)) {
       for (const r of data.occurrences.get(task.id) ?? NONE) {
-        if (r.status === 'completed' && r.completedAt && toLocal(r.completedAt) === day) {
+        if (r.status === 'completed' && r.completedAt) {
           out.push({
             key: `${task.id}@${r.date}`, task, occurrence: { date: r.date, showDate: r.date, showTime: task.dueTime, moved: false },
             date: r.date, time: task.dueTime, repeating: true, open: false, overdue: false, projected: false, completedAt: r.completedAt,
           });
         }
       }
-    } else if (task.status === 'completed' && task.completedAt && toLocal(task.completedAt) === day) {
+    } else if (task.status === 'completed' && task.completedAt) {
       out.push({
         key: task.id, task, occurrence: null, date: task.dueDate, time: task.dueTime, repeating: false, open: false,
         overdue: false, projected: false, completedAt: task.completedAt,
       });
     }
   }
-  return out.sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? -1 : 1));
+  return out.sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1));
+}
+
+/** Everything completed on the given day, oldest first. */
+export function completedOn(data: Snapshot, day: LocalDate, toLocal: ToLocalDate): TaskItem[] {
+  return completedItems(data).filter((i) => toLocal(i.completedAt!) === day).reverse();
+}
+
+/** Completed items grouped by the day they were completed, newest day first. */
+export function completedByDay(data: Snapshot, toLocal: ToLocalDate): { date: LocalDate; items: TaskItem[] }[] {
+  const groups: { date: LocalDate; items: TaskItem[] }[] = [];
+  for (const item of completedItems(data)) {
+    const day = toLocal(item.completedAt!);
+    const last = groups[groups.length - 1];
+    if (last && last.date === day) last.items.push(item);
+    else groups.push({ date: day, items: [item] });
+  }
+  return groups;
 }
 
 export function todayView(data: Snapshot, now: Now, toLocal: ToLocalDate): TodayView {
@@ -244,4 +261,23 @@ export function inboxItems(data: Snapshot, now: Now): TaskItem[] {
 export function upcomingRange(today: LocalDate, span: 'tomorrow' | 'week' | 'month'): { from: LocalDate; to: LocalDate } {
   const tomorrow = addDays(today, 1);
   return span === 'tomorrow' ? { from: tomorrow, to: tomorrow } : { from: tomorrow, to: addDays(today, span === 'week' ? 7 : 30) };
+}
+
+export type Progress = { total: number; done: number; open: number; overdue: number; percent: number };
+
+/**
+ * Progress of a group of tasks (a project). A repeating task counts once and
+ * stays open while it has occurrences left; archived tasks are left out.
+ */
+export function progressOf(items: readonly TaskItem[]): Progress {
+  const counted = items.filter((i) => i.task.status !== 'archived');
+  const done = counted.filter((i) => !i.open).length;
+  const overdue = counted.filter((i) => i.open && i.overdue).length;
+  return {
+    total: counted.length,
+    done,
+    open: counted.length - done,
+    overdue,
+    percent: counted.length === 0 ? 0 : Math.round((done / counted.length) * 100),
+  };
 }

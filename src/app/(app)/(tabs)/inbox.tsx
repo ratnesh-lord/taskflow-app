@@ -1,22 +1,38 @@
-import { View } from 'react-native';
+import { useMemo } from 'react';
 
-import { Divider } from '@/ui/Divider';
+import { inboxItems } from '@/core/agenda';
+import { HeaderTools } from '@/components/HeaderTools';
+import { QuickAddButton } from '@/components/QuickAdd';
+import { SelectionBar } from '@/components/SelectionBar';
+import { TaskList } from '@/components/TaskList';
+import { useSelection } from '@/components/useTaskActions';
+import { useData } from '@/state/data';
+import { useNow } from '@/state/now';
+import { plural } from '@/ui/format';
 import { PageHeader } from '@/ui/PageHeader';
 import { Screen } from '@/ui/Screen';
-import { Text } from '@/ui/Text';
-import { space } from '@/ui/tokens';
+import { FAB_SPACE } from '@/ui/tokens';
 
 export default function Inbox() {
+  const { data } = useData();
+  const { now } = useNow();
+  const selection = useSelection();
+  const items = useMemo(() => inboxItems(data, now), [data, now]);
+
   return (
-    <Screen>
-      <PageHeader title="Inbox" />
-      <Divider />
-      <View style={{ gap: space.sm }}>
-        <Text variant="bodyStrong">Empty for now</Text>
-        <Text variant="small" color="textSecondary">
-          A place to capture tasks before they have a project or a date. This screen is built in the next phase.
-        </Text>
-      </View>
+    <Screen
+      bottomSpace={FAB_SPACE}
+      overlay={
+        <>
+          <QuickAddButton />
+          <SelectionBar selection={selection} />
+        </>
+      }>
+      <PageHeader right={<HeaderTools />}
+        title="Inbox"
+        subtitle={items.length ? `${plural(items.length, 'task')} to sort. Give each a date, project or category.` : 'Tasks without a date or project land here.'}
+      />
+      <TaskList lead="date" selection={selection} sections={[{ items }]} empty="Inbox is empty." />
     </Screen>
   );
 }

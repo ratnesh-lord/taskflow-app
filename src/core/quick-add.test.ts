@@ -114,6 +114,9 @@ describe('quick add', () => {
     expectTask('Exam prep !2 #exam #aws', { title: 'Exam prep', priority: 'high', tags: ['exam', 'aws'] });
     expectTask('Tidy desk low priority', { title: 'Tidy desk', priority: 'low' });
     expectTask('Taxes priority: urgent', { title: 'Taxes', priority: 'critical' });
+    expectTask('Study for the exam #study !high', { title: 'Study for the exam', priority: 'high', tags: ['study'] });
+    expectTask('Call mum !urgent', { title: 'Call mum', priority: 'critical' });
+    expectTask('Wow that was great!', { title: 'Wow that was great!', priority: null });
     expectTask('Prepare slides for 2 hours', { title: 'Prepare slides', estimatedMinutes: 120 });
     expectTask('Read for 45 min', { title: 'Read', estimatedMinutes: 45 });
     expectTask('Issue #42', { title: 'Issue #42', tags: [] });

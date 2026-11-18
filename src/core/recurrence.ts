@@ -343,3 +343,17 @@ export function presetOf(rule: Rule | null): RepeatPreset {
   }
   return rule.freq;
 }
+
+/**
+ * The first day on or after `date` that a rule can fall on. A weekly rule
+ * with chosen weekdays starts on the first of them, so a task due on a
+ * Tuesday set to "every Mon and Wed" starts on Wednesday, not Tuesday.
+ */
+export function alignStart(date: LocalDate, rule: Rule): LocalDate {
+  if (rule.freq !== 'weekly' || !rule.byDay?.length) return date;
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(date, i);
+    if (rule.byDay.includes(weekday(d) as Weekday)) return d;
+  }
+  return date;
+}

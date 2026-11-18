@@ -1,6 +1,6 @@
 import { addDays, addMonths, diffDays, parts, startOfWeek, weekday } from './dates';
 import {
-  currentOccurrence, describeRule, formatRule, nextAfter, nextOnOrAfter, occurrencesBetween, type OccurrenceRecord,
+  alignStart, currentOccurrence, describeRule, formatRule, nextAfter, nextOnOrAfter, occurrencesBetween, type OccurrenceRecord,
   parseRule, planCompletion, planMove, planSkip, presetOf, projectedOccurrences, type Rule, type Series, type Weekday,
 } from './recurrence';
 
@@ -184,5 +184,18 @@ describe('a series and its occurrences', () => {
     const a: OccurrenceRecord = { date: '2026-11-10', status: 'completed' };
     const b: OccurrenceRecord = { date: '2026-11-11', status: 'completed' };
     expect(currentOccurrence(s, [a, b])).toEqual(currentOccurrence(s, [b, a]));
+  });
+});
+
+describe('alignStart', () => {
+  it('moves a weekly rule with weekdays to the first chosen day', () => {
+    // 2026-11-17 is a Tuesday.
+    expect(alignStart('2026-11-17', { freq: 'weekly', interval: 1, byDay: [1, 3] })).toBe('2026-11-18');
+    expect(alignStart('2026-11-17', { freq: 'weekly', interval: 2, byDay: [1] })).toBe('2026-11-23');
+  });
+  it('keeps a day that already matches, and every other kind of rule', () => {
+    expect(alignStart('2026-11-18', { freq: 'weekly', interval: 1, byDay: [1, 3] })).toBe('2026-11-18');
+    expect(alignStart('2026-11-17', { freq: 'weekly', interval: 1 })).toBe('2026-11-17');
+    expect(alignStart('2026-11-17', { freq: 'monthly', interval: 1 })).toBe('2026-11-17');
   });
 });

@@ -1,5 +1,5 @@
 import { allItems } from './agenda';
-import { activeConditions, describeFilter, filterItems, matchesText, NONE_ID, readFilter } from './filters';
+import { activeConditions, describeFilter, filterItems, matchesText, NONE_ID, readFilter, sameFilter } from './filters';
 import { makeTask } from './fixtures';
 
 const now = { date: '2026-11-14', minutes: 600 };
@@ -60,5 +60,16 @@ describe('filters', () => {
     expect(readFilter({ due: 'overdue', priorities: ['high', 'bogus'], sort: 'nope', extra: 1 })).toEqual({ due: 'overdue', priorities: ['high'] });
     expect(readFilter(null)).toEqual({});
     expect(readFilter('text')).toEqual({});
+  });
+});
+
+describe('sameFilter', () => {
+  it('ignores the order of chosen values, spelled-out defaults and search text', () => {
+    expect(sameFilter({ priorities: ['high', 'critical'] }, { priorities: ['critical', 'high'], show: 'open', due: 'any', sort: 'due', text: 'x' })).toBe(true);
+  });
+  it('tells different filters apart', () => {
+    expect(sameFilter({ priorities: ['high'] }, { priorities: ['critical'] })).toBe(false);
+    expect(sameFilter({ due: 'overdue' }, {})).toBe(false);
+    expect(sameFilter({ sort: 'priority' }, {})).toBe(false);
   });
 });

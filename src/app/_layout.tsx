@@ -9,6 +9,7 @@ import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { setWebFocusStyle } from '@/platform/focus-style';
 import { SessionProvider, useSession } from '@/state/session';
 import { ThemeProvider, useTheme } from '@/state/theme';
 
@@ -48,6 +49,10 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(colors.background).catch(() => {});
   }, [colors.background]);
+
+  useEffect(() => {
+    setWebFocusStyle(colors.accent);
+  }, [colors.accent]);
 
   if (!ready) return null;
 

@@ -15,7 +15,7 @@
  *              daily / weekly / monthly / yearly at the end of the line
  *   reminders  remind me 30 minutes before, remind me 1 hour before, remind me at 6pm,
  *              remind me (at the due time)
- *   priority   p1–p4 or !1–!4 (critical → low), "high priority", "priority low"
+ *   priority   p1–p4 or !1–!4 (critical → low), !high, "high priority", "priority low"
  *   tags       #exam   project  @work   estimate  for 45 min, for 2 hours
  *
  * Every recognised piece is reported with its position, so the screen can show
@@ -452,9 +452,12 @@ const RULES: Rule_[] = [
   // ---- priority, tags, project, estimate ------------------------------------------------------
   {
     kind: 'priority',
-    re: /(?:^|\s)(?:p([1-4])|!([1-4]))(?=\s|$|[,.;])/gi,
+    re: /(?:^|\s)(?:p([1-4])|!([1-4])|!(critical|urgent|high|medium|normal|low))(?=\s|$|[,.;])/gi,
     apply: (m, s) => {
-      s.priority = (['critical', 'high', 'medium', 'low'] as const)[Number(m[1] ?? m[2]) - 1];
+      const w = m[3]?.toLowerCase();
+      s.priority = w
+        ? w === 'urgent' ? 'critical' : w === 'normal' ? 'medium' : (w as Priority)
+        : (['critical', 'high', 'medium', 'low'] as const)[Number(m[1] ?? m[2]) - 1];
       return true;
     },
   },

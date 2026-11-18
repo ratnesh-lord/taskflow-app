@@ -1,4 +1,4 @@
-import { formatTime, type LocalTime } from '@/core/dates';
+import { diffDays, formatTime, type LocalTime, shortDate } from '@/core/dates';
 
 let cached: boolean | null = null;
 
@@ -42,4 +42,13 @@ export function offsetLabel(minutes: number): string {
   if (minutes === 0) return 'At the due time';
   if (minutes % 1440 === 0) return `${plural(minutes / 1440, 'day')} before`;
   return `${duration(minutes)} before`;
+}
+
+/** "Deadline Fri 21 Nov (3 days)", "Deadline today", "Deadline passed …". */
+export function deadlineText(deadline: string, today: string): string {
+  const days = diffDays(today, deadline);
+  if (days < 0) return `Deadline passed ${shortDate(deadline, today)}`;
+  if (days === 0) return 'Deadline today';
+  if (days === 1) return 'Deadline tomorrow';
+  return `Deadline ${shortDate(deadline, today)} (${days} days)`;
 }

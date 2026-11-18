@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/state/theme';
 import { Icon, type IconName } from '@/ui/Icon';
 import { Text } from '@/ui/Text';
+import { TAB_BAR_HEIGHT } from '@/ui/tokens';
 
 /**
  * The signed-in app: five tabs with a square tab bar drawn by the app itself
@@ -16,7 +17,8 @@ export default function AppLayout() {
 
   return (
     <Tabs>
-      <TabSlot />
+      {/* flex and minHeight keep a long list inside the screen, so the tab bar stays on screen. */}
+      <TabSlot style={{ flex: 1, minHeight: 0 }} />
       <TabList
         style={[
           styles.bar,
@@ -64,6 +66,6 @@ function TabButton({ icon, label, isFocused, style: _style, children: _children,
 
 const styles = StyleSheet.create({
   bar: { flexDirection: 'row', borderTopWidth: 1 },
-  tab: { flex: 1, height: 62, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  tab: { flex: 1, height: TAB_BAR_HEIGHT, alignItems: 'center', justifyContent: 'center', gap: 4 },
   marker: { position: 'absolute', top: -1, left: 0, right: 0, height: 2 },
 });

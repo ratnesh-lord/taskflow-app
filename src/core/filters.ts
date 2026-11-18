@@ -157,3 +157,21 @@ export function readFilter(value: unknown): TaskFilter {
   for (const key of Object.keys(out) as (keyof TaskFilter)[]) if (out[key] === undefined) delete out[key];
   return out;
 }
+
+/** Whether two filters pick the same tasks in the same order (search text aside, defaults spelled out or not). */
+export function sameFilter(a: TaskFilter, b: TaskFilter): boolean {
+  const canonical = (f: TaskFilter) => {
+    const r = readFilter(f);
+    return JSON.stringify([
+      r.show ?? 'open',
+      r.due ?? 'any',
+      [...(r.priorities ?? [])].sort(),
+      [...(r.statuses ?? [])].sort(),
+      [...(r.projectIds ?? [])].sort(),
+      [...(r.categoryIds ?? [])].sort(),
+      [...(r.tagIds ?? [])].sort(),
+      r.sort ?? 'due',
+    ]);
+  };
+  return canonical(a) === canonical(b);
+}
