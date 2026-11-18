@@ -4,14 +4,12 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { signOut } from '@/platform/auth';
-import { env } from '@/platform/env';
-import { runSyncCheck, type SyncCheck } from '@/platform/sync-check';
+import { SyncPanel } from '@/components/SyncPanel';
 import { useData } from '@/state/data';
 import { useSession } from '@/state/session';
 import { type ThemePreference, useTheme } from '@/state/theme';
 import { Button } from '@/ui/Button';
 import { Divider } from '@/ui/Divider';
-import { Icon } from '@/ui/Icon';
 import { plural } from '@/ui/format';
 import { Notice } from '@/ui/Notice';
 import { MenuRow } from '@/ui/Row';
@@ -27,35 +25,22 @@ const THEMES: readonly { value: ThemePreference; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ];
 
-function host(url: string): string {
-  return url.replace(/^https?:\/\//, '');
-}
-
 export default function More() {
   const { data } = useData();
   const router = useRouter();
   const { user } = useSession();
-  const { colors, preference, setPreference } = useTheme();
-  const [check, setCheck] = useState<SyncCheck | null>(null);
-  const [checking, setChecking] = useState(false);
+  const { preference, setPreference } = useTheme();
+  const [confirming, setConfirming] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
   const name = typeof user?.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : '';
 
-  async function runCheck() {
-    setChecking(true);
-    try {
-      setCheck(await runSyncCheck());
-    } catch (e) {
-      setCheck({
-        ok: false,
-        steps: [{ label: 'Connection', ok: false, detail: e instanceof Error ? e.message : 'Could not reach the server' }],
-      });
-    }
-    setChecking(false);
-  }
-
   async function leave() {
+    // Unsent changes are kept in this account's database on the device and go up at the next sign-in.
+    if (data.pendingEdits && !confirming) {
+      setConfirming(true);
+      return;
+    }
     setSigningOut(true);
     await signOut();
     setSigningOut(false);
@@ -83,10 +68,7 @@ export default function More() {
         <MenuRow icon="check" label="Completed" onPress={() => router.push('/completed')} />
         <MenuRow icon="tag" label="Categories" detail={data.categories.length ? String(data.categories.length) : undefined} onPress={() => router.push('/categories')} />
         <Text variant="caption" color="textSecondary" style={{ paddingTop: space.sm }}>
-          Your tasks are saved on this device and work offline.
-          {data.pendingEdits
-            ? ` ${plural(data.pendingEdits, 'change')} will be sent to your account when syncing is switched on in the next update.`
-            : ''}
+          Your tasks are saved on this device, so they work offline, and synced with your account.
         </Text>
       </View>
 
@@ -97,38 +79,15 @@ export default function More() {
         <Segmented label="Appearance" value={preference} options={THEMES} onChange={setPreference} />
       </View>
 
-      <View style={{ gap: space.sm }}>
-        <Text variant="label" color="textSecondary">
-          Connection
-        </Text>
-        <Text variant="small" color="textSecondary">
-          Registers this device, pushes one edit and pulls it back from {host(env.supabaseUrl)}.
-        </Text>
-        <Button variant="secondary" label="Check connection" busyLabel="Checking…" busy={checking} onPress={runCheck} />
-        {check ? (
-          <View style={{ gap: space.sm }}>
-            {check.steps.map((step) => (
-              <View key={step.label} style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
-                <Icon name={step.ok ? 'check' : 'close'} color={step.ok ? colors.completed : colors.overdue} size={18} />
-                <View style={{ flex: 1 }}>
-                  <Text variant="smallStrong">{step.label}</Text>
-                  <Text variant="caption" color="textSecondary">
-                    {step.detail}
-                  </Text>
-                </View>
-              </View>
-            ))}
-            <Notice tone={check.ok ? 'success' : 'error'}>
-              {check.ok
-                ? 'Sign-in, access rules and sync all work from this device.'
-                : 'One step failed. The line marked with a cross says which.'}
-            </Notice>
-          </View>
-        ) : null}
-      </View>
+      <SyncPanel />
 
       <Divider />
 
+      {confirming ? (
+        <Notice tone="error">
+          {`${plural(data.pendingEdits, 'change')} on this device ${data.pendingEdits === 1 ? 'has' : 'have'} not reached your account yet. ${data.pendingEdits === 1 ? 'It stays' : 'They stay'} here and ${data.pendingEdits === 1 ? 'is' : 'are'} sent when you sign in again on this device. Tap Sign out again to continue.`}
+        </Notice>
+      ) : null}
       <Button variant="secondary" label="Sign out" busyLabel="Signing out…" busy={signingOut} onPress={leave} />
       <Text variant="caption" color="textSecondary">
         TaskFlow {Constants.expoConfig?.version ?? ''}

@@ -52,3 +52,12 @@ export function deadlineText(deadline: string, today: string): string {
   if (days === 1) return 'Deadline tomorrow';
   return `Deadline ${shortDate(deadline, today)} (${days} days)`;
 }
+
+/** "at 14:05" today, "yesterday at 14:05", "on Mon 16 Nov at 14:05" otherwise. */
+export function dayLabelOrTime(date: string, time: LocalTime, today: string): string {
+  const days = diffDays(date, today);
+  if (days === 0) return `at ${showTime(time)}`;
+  if (days === 1) return `yesterday at ${showTime(time)}`;
+  if (days === -1) return `tomorrow at ${showTime(time)}`;
+  return `on ${shortDate(date, today)} at ${showTime(time)}`;
+}

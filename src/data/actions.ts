@@ -430,6 +430,20 @@ export class Actions {
   // Projects, categories, saved filters
   // ---------------------------------------------------------------------------
 
+  /**
+   * Keep the account's time zone in step with this device (Phase 5 uses it for
+   * server-sent summaries). Only once the profile has arrived from the server.
+   */
+  async setTimezone(userId: string, timezone: string): Promise<boolean> {
+    const { result } = await this.store.transaction(async (tx) => {
+      const profile = await tx.get('profiles', userId);
+      if (!profile || profile.timezone === timezone) return false;
+      await tx.write('profiles', userId, { timezone });
+      return true;
+    });
+    return result;
+  }
+
   async createProject(input: ProjectInput): Promise<{ id: string; undo: UndoLog }> {
     const name = input.name.trim();
     if (!name) throw new InvalidInput('A project needs a name.');

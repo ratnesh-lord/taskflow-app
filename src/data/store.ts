@@ -6,7 +6,9 @@
  *   2. in the outbox, as an op in the shape sync_push accepts:
  *      { op_id, table, id, kind, patch, ts }.
  *
- * Phase 4 sends the outbox. Until then it simply grows.
+ * The sync engine (sync.ts) sends the outbox, then brings in other devices'
+ * changes with applyRemote, which never touches a field that still has an
+ * edit waiting to be sent from here.
  *
  * All access goes through one queue, so a transaction never interleaves with
  * another read or write. Every transaction returns an undo log.
@@ -14,9 +16,12 @@
 import { type ClockState, HybridClock } from '@/core/hlc';
 
 import { type Db, SerialQueue, type SqlValue } from './db';
-import { columnsOf, decode, encode, LOCAL_MIGRATIONS, type TableName } from './schema';
+import { columnsOf, decode, encode, LOCAL_MIGRATIONS, TABLE_NAMES, type TableName, TIME_COLUMNS, TIMESTAMP_COLUMNS } from './schema';
 
 export type Row = Record<string, unknown> & { id: string };
+
+/** 'local': an edit made on this device. 'sync': the sync engine changed rows or the outbox. */
+export type ChangeOrigin = 'local' | 'sync';
 
 type ChangeKind = 'insert' | 'update' | 'remove' | 'restore';
 type Change = { table: TableName; id: string; kind: ChangeKind; before: Record<string, unknown> };
@@ -55,6 +60,26 @@ export type OutboxOp = {
 
 const CLOCK_KEY = 'clock';
 
+/** A row as sync_pull sends it: every column, with JSON types. */
+export type RemoteRow = Record<string, unknown> & { id: string };
+
+/** Changes from sync_pull, by table. */
+export type RemoteChanges = Partial<Record<string, RemoteRow[]>>;
+
+function toIso(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? String(value) : d.toISOString();
+}
+
+/** A server value in the form the app keeps it (times as HH:MM, timestamps as ISO with Z). */
+function fromServer(table: string, column: string, value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  if (TIME_COLUMNS[table]?.includes(column)) return String(value).slice(0, 5);
+  if (TIMESTAMP_COLUMNS[table]?.includes(column)) return toIso(value);
+  return value;
+}
+
 function decodeRow(table: TableName, raw: Record<string, unknown>): Row {
   const out: Record<string, unknown> = {
     id: raw.id,
@@ -78,7 +103,7 @@ function serverValue(type: string, value: unknown): unknown {
 
 export class Store {
   private readonly queue = new SerialQueue();
-  private readonly listeners = new Set<() => void>();
+  private readonly listeners = new Set<(origin: ChangeOrigin) => void>();
   private readonly now: () => Date;
 
   private constructor(
@@ -117,13 +142,14 @@ export class Store {
     return new Store(db, opts, clock);
   }
 
-  subscribe(listener: () => void): () => void {
+  /** Called after every change: 'local' for edits made here, 'sync' for changes made by syncing. */
+  subscribe(listener: (origin: ChangeOrigin) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  private emit(): void {
-    for (const l of this.listeners) l();
+  private emit(origin: ChangeOrigin): void {
+    for (const l of this.listeners) l(origin);
   }
 
   /** Every live row of a table, decoded. */
@@ -149,6 +175,147 @@ export class Store {
       );
       return raw.map((r) => ({ seq: r.seq, op_id: r.op_id, table: r.tbl, id: r.row_id, kind: r.kind, patch: JSON.parse(r.patch), ts: r.ts }));
     });
+  }
+
+  /** The oldest edits waiting to be sent, at most `limit`. */
+  pendingOps(limit: number): Promise<OutboxOp[]> {
+    return this.queue.run(async () => {
+      const raw = await this.db.all<{ seq: number; op_id: string; tbl: TableName; row_id: string; kind: OutboxOp['kind']; patch: string; ts: string }>(
+        'SELECT * FROM outbox ORDER BY seq LIMIT ?',
+        [limit],
+      );
+      return raw.map((r) => ({ seq: r.seq, op_id: r.op_id, table: r.tbl, id: r.row_id, kind: r.kind, patch: JSON.parse(r.patch), ts: r.ts }));
+    });
+  }
+
+  /** Forget edits the server has answered for. */
+  acknowledge(seqs: readonly number[]): Promise<void> {
+    if (seqs.length === 0) return Promise.resolve();
+    return this.queue.run(async () => {
+      for (let i = 0; i < seqs.length; i += 500) {
+        const part = seqs.slice(i, i + 500);
+        await this.db.run(`DELETE FROM outbox WHERE seq IN (${part.map(() => '?').join(', ')})`, part);
+      }
+    }).then(() => this.emit('sync'));
+  }
+
+  getMeta(key: string): Promise<string | null> {
+    return this.queue.run(async () => {
+      const [row] = await this.db.all<{ value: string }>('SELECT value FROM meta WHERE key = ?', [key]);
+      return row?.value ?? null;
+    });
+  }
+
+  setMeta(key: string, value: string | null): Promise<void> {
+    return this.queue.run(async () => {
+      if (value === null) await this.db.run('DELETE FROM meta WHERE key = ?', [key]);
+      else await this.db.run('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [key, value]);
+    });
+  }
+
+  /**
+   * Bring in rows from the server. A row with no edits waiting here becomes
+   * exactly the server's row. In a row that does have waiting edits, those
+   * fields keep this device's value (it is newer, and goes up next push);
+   * every other field takes the server's. Nothing is queued and there is no
+   * undo: these are other devices' edits, already saved.
+   */
+  applyRemote(changes: RemoteChanges): Promise<number> {
+    return this.queue
+      .run(async () => {
+        let applied = 0;
+        await this.db.exec('BEGIN');
+        try {
+          const pending = new Map<string, Set<string>>();
+          const ops = await this.db.all<{ tbl: string; row_id: string; kind: string; patch: string }>('SELECT tbl, row_id, kind, patch FROM outbox');
+          for (const op of ops) {
+            const key = `${op.tbl}:${op.row_id}`;
+            const set = pending.get(key) ?? new Set<string>();
+            if (op.kind === 'upsert') for (const k of Object.keys(JSON.parse(op.patch) as object)) set.add(k);
+            else set.add('deleted_at');
+            pending.set(key, set);
+          }
+
+          const nowIso = this.now().toISOString();
+          for (const table of TABLE_NAMES) {
+            const rows = changes[table];
+            if (!rows?.length) continue;
+            const cols = columnsOf(table);
+            for (const remote of rows) {
+              if (typeof remote.id !== 'string') continue;
+              const remoteTs = (remote.field_ts && typeof remote.field_ts === 'object' ? remote.field_ts : {}) as Record<string, string>;
+              for (const stamp of Object.values(remoteTs)) if (typeof stamp === 'string') this.clock.receive(stamp);
+
+              const values: Record<string, SqlValue> = {
+                user_id: this.opts.userId,
+                created_at: toIso(remote.created_at) ?? nowIso,
+                updated_at: toIso(remote.updated_at) ?? nowIso,
+                deleted_at: toIso(remote.deleted_at),
+                rev: Number(remote.rev ?? 0),
+              };
+              for (const [name, col] of Object.entries(cols)) {
+                if (!(name in remote)) continue;
+                const value = fromServer(table, name, remote[name]);
+                // A NOT NULL column keeps its default rather than failing on a null from the server.
+                if (value === null && col.default !== undefined) continue;
+                values[name] = encode(col.type, value);
+              }
+
+              const [raw] = await this.db.all<Record<string, unknown>>(`SELECT * FROM ${table} WHERE id = ?`, [remote.id]);
+              const fieldTs: Record<string, string> = { ...remoteTs };
+              const mine = pending.get(`${table}:${remote.id}`);
+              if (raw && mine?.size) {
+                const localTs = (decode('json', raw.field_ts) ?? {}) as Record<string, string>;
+                for (const k of mine) {
+                  if (k in values || k in cols || k === 'deleted_at') values[k] = (raw[k] ?? null) as SqlValue;
+                  if (localTs[k]) fieldTs[k] = localTs[k];
+                }
+              }
+              values.field_ts = JSON.stringify(fieldTs);
+
+              const keys = Object.keys(values);
+              if (raw) {
+                await this.db.run(`UPDATE ${table} SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, [
+                  ...keys.map((k) => values[k]),
+                  remote.id,
+                ]);
+              } else {
+                await this.db.run(`INSERT INTO ${table} (id, ${keys.join(', ')}) VALUES (?${keys.map(() => ', ?').join('')})`, [
+                  remote.id,
+                  ...keys.map((k) => values[k]),
+                ]);
+              }
+              applied += 1;
+            }
+          }
+          await this.db.run('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [CLOCK_KEY, JSON.stringify(this.clock.snapshot())]);
+          await this.db.exec('COMMIT');
+        } catch (e) {
+          await this.db.exec('ROLLBACK').catch(() => {});
+          throw e;
+        }
+        return applied;
+      })
+      .then((applied) => {
+        if (applied) this.emit('sync');
+        return applied;
+      });
+  }
+
+  /** Drop every synced row (not the outbox), before pulling everything again. */
+  clearSynced(): Promise<void> {
+    return this.queue
+      .run(async () => {
+        await this.db.exec('BEGIN');
+        try {
+          for (const table of TABLE_NAMES) await this.db.run(`DELETE FROM ${table}`);
+          await this.db.exec('COMMIT');
+        } catch (e) {
+          await this.db.exec('ROLLBACK').catch(() => {});
+          throw e;
+        }
+      })
+      .then(() => this.emit('sync'));
   }
 
   outboxCount(): Promise<number> {
@@ -180,7 +347,7 @@ export class Store {
         }
       })
       .then(({ result, undo, changed }) => {
-        if (changed) this.emit();
+        if (changed) this.emit('local');
         return { result, undo };
       });
   }

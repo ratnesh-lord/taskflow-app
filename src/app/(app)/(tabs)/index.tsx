@@ -8,10 +8,10 @@ import { QuickAddButton } from '@/components/QuickAdd';
 import { SelectionBar } from '@/components/SelectionBar';
 import { TaskList } from '@/components/TaskList';
 import { useSelection } from '@/components/useTaskActions';
-import { useData } from '@/state/data';
+import { useData, useSync } from '@/state/data';
 import { useNow } from '@/state/now';
 import { useTheme } from '@/state/theme';
-import { showTime } from '@/ui/format';
+import { plural, showTime } from '@/ui/format';
 import { Icon } from '@/ui/Icon';
 import { PageHeader } from '@/ui/PageHeader';
 import { Screen } from '@/ui/Screen';
@@ -28,6 +28,7 @@ export default function Today() {
   const view = useMemo(() => todayView(data, now, toLocal), [data, now]);
   const next = useMemo(() => nextReminder(data, data.reminders, now, moment), [data, now, moment]);
   const { stats } = view;
+  const sync = useSync();
   const [focus, setFocus] = useState<TodayFocus | null>(null);
   const pick = (f: TodayFocus) => setFocus((cur) => (cur === f ? null : f));
 
@@ -48,6 +49,12 @@ export default function Today() {
         </>
       }>
       <PageHeader right={<HeaderTools />} title="Today" subtitle={longDate(now.date)} />
+
+      {sync.phase === 'offline' && data.pendingEdits ? (
+        <Text variant="caption" color="textSecondary" accessibilityLiveRegion="polite">
+          Not synced ({sync.error ?? 'no connection'}). {plural(data.pendingEdits, 'change')} will go up when the connection is back.
+        </Text>
+      ) : null}
 
       <View>
         <View style={{ flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.divider }}>

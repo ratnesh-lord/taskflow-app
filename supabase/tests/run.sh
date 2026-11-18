@@ -23,4 +23,16 @@ echo "== concurrency.sh"
 bash "${here}/concurrency.sh" "${db}"
 
 echo
+echo "== sync engine: two devices through sync_push and sync_pull (src/data/sync.db.test.ts)"
+root="$(cd "${here}/../.." && pwd)"
+if [ -x "${root}/node_modules/.bin/jest" ]; then
+  (cd "${root}" && TASKFLOW_SYNC_TEST_DB="${db}" node_modules/.bin/jest --ci src/data/sync.db.test.ts)
+elif [ -n "${REQUIRE_SYNC_TESTS:-}" ]; then
+  echo "node_modules is missing: run npm ci first" >&2
+  exit 1
+else
+  echo "skipped: run npm ci first to include these"
+fi
+
+echo
 echo "All database tests passed."

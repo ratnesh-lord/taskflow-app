@@ -6,6 +6,10 @@
 //                link works once, a new request cancels the old link, and a used link comes
 //                back with the error after the # (as Supabase does when it can no longer
 //                tell which flow the link belonged to).
+//   /realtime/v1/websocket  a small Realtime server: it speaks enough of the Phoenix
+//                protocol for postgres_changes on public.sync_state, polls that table in
+//                the real database, and sends a change to every subscriber whose sign-in
+//                matches the row's user_id filter (as row-level security would).
 //   /rest/v1/*   forwards each call to a REAL Postgres database that has the project's
 //                migrations applied, as the signed-in user, so row-level security and the
 //                sync functions run exactly as they would on Supabase
@@ -13,6 +17,8 @@
 // Only for tests on this machine. It checks no signatures and must never be exposed.
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
+
+import { WebSocketServer } from 'ws';
 import http from 'node:http';
 
 const DB = process.env.E2E_DB;
@@ -223,5 +229,91 @@ const server = http.createServer((req, res) => {
     }
   });
 });
+
+// ---- Realtime -------------------------------------------------------------------------------
+
+const sockets = new WebSocketServer({ noServer: true });
+const subscriptions = new Set(); // { ws, topic, joinRef, bindingId, userId }
+let nextBindingId = 1;
+
+server.on('upgrade', (req, socket, head) => {
+  if (!req.url?.startsWith('/realtime/v1/websocket')) return socket.destroy();
+  sockets.handleUpgrade(req, socket, head, (ws) => sockets.emit('connection', ws));
+});
+
+sockets.on('connection', (ws) => {
+  const send = (joinRef, ref, topic, event, payload) => ws.send(JSON.stringify([joinRef, ref, topic, event, payload]));
+  ws.on('message', (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(String(raw));
+    } catch {
+      return;
+    }
+    const [joinRef, ref, topic, event, payload] = msg;
+    if (event === 'heartbeat') return send(null, ref, 'phoenix', 'phx_reply', { status: 'ok', response: {} });
+    if (event === 'phx_leave') {
+      for (const sub of subscriptions) if (sub.ws === ws && sub.topic === topic) subscriptions.delete(sub);
+      return send(joinRef, ref, topic, 'phx_reply', { status: 'ok', response: {} });
+    }
+    if (event === 'access_token') return;
+    if (event !== 'phx_join') return send(joinRef, ref, topic, 'phx_reply', { status: 'ok', response: {} });
+
+    const tokenUser = subjectOfToken(payload?.access_token);
+    const answered = [];
+    for (const change of payload?.config?.postgres_changes ?? []) {
+      const id = nextBindingId++;
+      answered.push({ id, event: change.event, schema: change.schema, table: change.table, filter: change.filter });
+      const m = /^user_id=eq\.([0-9a-f-]{36})$/.exec(change.filter ?? '');
+      if (change.table === 'sync_state' && m && tokenUser === m[1]) {
+        subscriptions.add({ ws, topic, joinRef, bindingId: id, userId: m[1] });
+      }
+    }
+    send(joinRef, ref, topic, 'phx_reply', { status: 'ok', response: { postgres_changes: answered } });
+  });
+  ws.on('close', () => {
+    for (const sub of subscriptions) if (sub.ws === ws) subscriptions.delete(sub);
+  });
+});
+
+function subjectOfToken(token) {
+  try {
+    return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString()).sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Watch sync_state the way Supabase's replication would, a few times a second.
+const lastRev = new Map();
+setInterval(() => {
+  const users = [...new Set([...subscriptions].map((sub) => sub.userId))];
+  if (users.length === 0) return;
+  let rows;
+  try {
+    rows = JSON.parse(
+      sql(`select coalesce(json_agg(json_build_object('user_id', user_id, 'rev', rev, 'origin_device', origin_device)), '[]') from public.sync_state where user_id in (${users.map(quote).join(', ')})`) || '[]',
+    );
+  } catch {
+    return;
+  }
+  for (const row of rows) {
+    if (lastRev.get(row.user_id) === row.rev) continue;
+    const first = !lastRev.has(row.user_id);
+    lastRev.set(row.user_id, row.rev);
+    if (first) continue; // only changes after someone started watching
+    for (const sub of subscriptions) {
+      if (sub.userId !== row.user_id || sub.ws.readyState !== 1) continue;
+      sub.ws.send(JSON.stringify([sub.joinRef, null, sub.topic, 'postgres_changes', {
+        ids: [sub.bindingId],
+        data: {
+          type: 'UPDATE', schema: 'public', table: 'sync_state', commit_timestamp: new Date().toISOString(), errors: null,
+          columns: [{ name: 'user_id', type: 'uuid' }, { name: 'rev', type: 'int8' }, { name: 'origin_device', type: 'uuid' }],
+          record: row, old_record: { user_id: row.user_id },
+        },
+      }]));
+    }
+  }
+}, 250);
 
 server.listen(PORT, '127.0.0.1', () => console.log(`mock-supabase listening on http://127.0.0.1:${PORT} (database ${DB})`));
