@@ -12,10 +12,14 @@ export type ScreenProps = {
   narrow?: boolean;
   /** Leave room for the system navigation bar (screens without the tab bar). */
   bottomInset?: boolean;
+  /** Leave room under the content for the floating add button or a toolbar. */
+  bottomSpace?: number;
+  /** Floating things drawn over the page, such as the add button or the selection toolbar. */
+  overlay?: ReactNode;
 };
 
 /** Page frame: themed background, safe areas, scrolling, and a centred column on wide screens. */
-export function Screen({ children, narrow, bottomInset }: ScreenProps) {
+export function Screen({ children, narrow, bottomInset, bottomSpace = 0, overlay }: ScreenProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -27,10 +31,11 @@ export function Screen({ children, narrow, bottomInset }: ScreenProps) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: space.xl + (bottomInset ? insets.bottom : 0) },
+          { paddingBottom: space.xl + bottomSpace + (bottomInset ? insets.bottom : 0) },
         ]}>
         <View style={[styles.column, { maxWidth: narrow ? 440 : MAX_CONTENT_WIDTH }]}>{children}</View>
       </ScrollView>
+      {overlay}
     </KeyboardAvoidingView>
   );
 }

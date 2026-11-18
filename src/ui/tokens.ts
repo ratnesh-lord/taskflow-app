@@ -38,6 +38,12 @@ export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 }
 /** Smallest comfortable touch target, in density-independent pixels. */
 export const TOUCH = 48;
 
+/** Height of the app's own tab bar, above the system navigation inset. */
+export const TAB_BAR_HEIGHT = 62;
+
+/** Room the floating add button needs at the bottom right. */
+export const FAB_SPACE = 88;
+
 export const font = {
   regular: 'Inter_400Regular',
   medium: 'Inter_500Medium',

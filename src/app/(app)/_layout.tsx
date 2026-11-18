@@ -1,69 +1,85 @@
-import { TabList, Tabs, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Stack, useSegments } from 'expo-router';
+import { Platform, View } from 'react-native';
 
+import { NoticeBar } from '@/components/NoticeBar';
+import { QuickAddProvider } from '@/components/QuickAdd';
+import { signOut } from '@/platform/auth';
+import { DataProvider, useDataState } from '@/state/data';
+import { NowProvider } from '@/state/now';
 import { useTheme } from '@/state/theme';
-import { Icon, type IconName } from '@/ui/Icon';
+import { Button } from '@/ui/Button';
+import { Screen } from '@/ui/Screen';
 import { Text } from '@/ui/Text';
+import { FAB_SPACE, space, TAB_BAR_HEIGHT } from '@/ui/tokens';
 
 /**
- * The signed-in app: five tabs with a square tab bar drawn by the app itself
- * (the system tab bar has a rounded selection pill).
+ * The signed-in app. Opens this account's tasks on the device first; every
+ * screen below can then read them synchronously.
  */
-export default function AppLayout() {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-
+export default function SignedInLayout() {
   return (
-    <Tabs>
-      <TabSlot />
-      <TabList
-        style={[
-          styles.bar,
-          { backgroundColor: colors.background, borderTopColor: colors.divider, paddingBottom: insets.bottom },
-        ]}>
-        <TabTrigger name="today" href="/" asChild>
-          <TabButton icon="today" label="Today" />
-        </TabTrigger>
-        <TabTrigger name="inbox" href="/inbox" asChild>
-          <TabButton icon="inbox" label="Inbox" />
-        </TabTrigger>
-        <TabTrigger name="upcoming" href="/upcoming" asChild>
-          <TabButton icon="upcoming" label="Upcoming" />
-        </TabTrigger>
-        <TabTrigger name="projects" href="/projects" asChild>
-          <TabButton icon="projects" label="Projects" />
-        </TabTrigger>
-        <TabTrigger name="more" href="/more" asChild>
-          <TabButton icon="more" label="More" />
-        </TabTrigger>
-      </TabList>
-    </Tabs>
+    <NowProvider>
+      <DataProvider>
+        <Gate />
+      </DataProvider>
+    </NowProvider>
   );
 }
 
-type TabButtonProps = TabTriggerSlotProps & { icon: IconName; label: string };
-
-function TabButton({ icon, label, isFocused, style: _style, children: _children, ref: _ref, ...pressable }: TabButtonProps) {
+function Gate() {
+  const state = useDataState();
   const { colors } = useTheme();
-  const tint = isFocused ? colors.text : colors.textSecondary;
+  const segments = useSegments();
+  const onTabs = (segments as string[]).includes('(tabs)');
+
+  if (state.status === 'loading') {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
+        <Text variant="small" color="textSecondary">
+          Opening your tasks…
+        </Text>
+      </View>
+    );
+  }
+
+  if (state.status === 'error') {
+    // On the web the database file can be open in one tab only.
+    const otherTab = Platform.OS === 'web' && /access handle/i.test(state.message);
+    return (
+      <Screen narrow>
+        <Text variant="heading" accessibilityRole="header">
+          {otherTab ? 'TaskFlow is open in another tab' : 'Your tasks could not be opened'}
+        </Text>
+        <Text variant="small" color="textSecondary">
+          {otherTab
+            ? 'Your tasks can be open in one browser tab at a time. Close the other tab, then reload this one.'
+            : 'Closing and reopening the app usually fixes this.'}
+        </Text>
+        {otherTab ? null : (
+          <Text variant="caption" color="textSecondary">
+            Details: {state.message}
+          </Text>
+        )}
+        <View style={{ gap: space.sm }}>
+          {Platform.OS === 'web' ? <Button label="Reload" onPress={() => window.location.reload()} /> : null}
+          <Button variant="secondary" label="Sign out" onPress={() => void signOut()} />
+        </View>
+      </Screen>
+    );
+  }
+
   return (
-    <Pressable
-      {...pressable}
-      accessibilityRole="tab"
-      aria-selected={!!isFocused}
-      style={styles.tab}>
-      <View style={[styles.marker, { backgroundColor: isFocused ? colors.accent : 'transparent' }]} />
-      <Icon name={icon} color={tint} size={20} />
-      <Text variant="caption" style={{ color: tint, fontSize: 11, lineHeight: 14 }}>
-        {label}
-      </Text>
-    </Pressable>
+    <QuickAddProvider>
+      <Stack screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: colors.background } }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="task/[id]" />
+        <Stack.Screen name="project/[id]" />
+        <Stack.Screen name="all-tasks" />
+        <Stack.Screen name="completed" />
+        <Stack.Screen name="search" />
+        <Stack.Screen name="categories" />
+      </Stack>
+      <NoticeBar bottom={onTabs ? TAB_BAR_HEIGHT : 0} right={onTabs ? FAB_SPACE : 0} />
+    </QuickAddProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  bar: { flexDirection: 'row', borderTopWidth: 1 },
-  tab: { flex: 1, height: 62, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  marker: { position: 'absolute', top: -1, left: 0, right: 0, height: 2 },
-});

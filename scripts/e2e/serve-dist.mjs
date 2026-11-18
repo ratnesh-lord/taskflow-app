@@ -1,5 +1,6 @@
 // Serves the exported web app. Any path that is not a file gets index.html,
 // which is what a static host is configured to do for a single-page app.
+// No special headers: the app must work on an ordinary static host.
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -8,7 +9,7 @@ const root = path.resolve(process.argv[2] ?? 'dist');
 const port = Number(process.argv[3] ?? 8099);
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
-  '.png': 'image/png', '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.svg': 'image/svg+xml', '.map': 'application/json',
+  '.png': 'image/png', '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.svg': 'image/svg+xml', '.map': 'application/json', '.wasm': 'application/wasm',
 };
 
 http
