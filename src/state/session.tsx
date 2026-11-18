@@ -1,5 +1,5 @@
 import type { Session, User } from '@supabase/supabase-js';
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 
 import { registerDevice } from '@/platform/device';
@@ -19,6 +19,8 @@ type SessionValue = {
   status: SessionStatus;
   session: Session | null;
   user: User | null;
+  /** Call when a reset link signed the user in, to ask for a new password. */
+  beginRecovery: () => void;
   /** Call after the new password is saved, to leave recovery. */
   finishRecovery: () => void;
 };
@@ -27,6 +29,7 @@ const SessionContext = createContext<SessionValue>({
   status: 'loading',
   session: null,
   user: null,
+  beginRecovery: () => {},
   finishRecovery: () => {},
 });
 
@@ -34,6 +37,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(isConfigured);
   const [recovering, setRecovering] = useState(false);
+  const beginRecovery = useCallback(() => setRecovering(true), []);
+  const finishRecovery = useCallback(() => setRecovering(false), []);
 
   useEffect(() => {
     if (!isConfigured) return;
@@ -94,8 +99,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           : recovering
             ? 'recovery'
             : 'signedIn';
-    return { status, session, user: session?.user ?? null, finishRecovery: () => setRecovering(false) };
-  }, [loading, session, recovering]);
+    return {
+      status,
+      session,
+      user: session?.user ?? null,
+      beginRecovery,
+      finishRecovery,
+    };
+  }, [loading, session, recovering, beginRecovery, finishRecovery]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

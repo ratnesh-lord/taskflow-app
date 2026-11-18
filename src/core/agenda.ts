@@ -281,3 +281,31 @@ export function progressOf(items: readonly TaskItem[]): Progress {
     percent: counted.length === 0 ? 0 : Math.round((done / counted.length) * 100),
   };
 }
+
+/** The counts at the top of Today; tapping one narrows the list below to it. */
+export type TodayFocus = 'scheduled' | 'done' | 'pending' | 'overdue';
+
+export type TodaySection = { key: string; title: string; tone?: 'overdue'; items: TaskItem[] };
+
+/**
+ * The lists Today shows, all of them or only those behind one count:
+ * Scheduled = today's open tasks and those done today, Done = done today,
+ * Pending = today's open tasks, Overdue = open tasks from earlier days.
+ */
+export function todaySections(view: TodayView, focus: TodayFocus | null): TodaySection[] {
+  const overdue: TodaySection = { key: 'overdue', title: 'Overdue', tone: 'overdue', items: view.overdue };
+  const today: TodaySection = { key: 'today', title: 'Today', items: view.today };
+  const done: TodaySection = { key: 'done', title: 'Done today', items: view.doneToday };
+  switch (focus) {
+    case 'scheduled':
+      return [today, done];
+    case 'done':
+      return [done];
+    case 'pending':
+      return [today];
+    case 'overdue':
+      return [overdue];
+    default:
+      return [overdue, today, done];
+  }
+}

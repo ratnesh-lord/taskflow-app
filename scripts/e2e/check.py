@@ -4,16 +4,19 @@ mock-supabase.mjs (fake sign-in, real Postgres) and asserts what a person would 
 
 Environment: E2E_WEB (address of the web app), E2E_DB (database name), E2E_SHOTS (folder for screenshots)
 """
+import json
 import os
 import re
 import subprocess
 import sys
+import urllib.request
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from playwright.sync_api import expect, sync_playwright
 
 WEB = os.environ["E2E_WEB"]
+API = os.environ.get("E2E_API", "http://127.0.0.1:54400")
 DB = os.environ["E2E_DB"]
 SHOTS = os.environ.get("E2E_SHOTS", "/tmp/taskflow-e2e")
 EMAIL = "e2e@example.com"
@@ -260,6 +263,10 @@ with sync_playwright() as p:
     role(page, "button", "All tasks and filters").last.click()
     expect(page.get_by_role("heading", name="All tasks", exact=True).last).to_be_visible()
     button(page, "Filter and sort").click()
+    for name in ["Open", "Completed", "Both"]:
+        box = role(page, "radio", name).first.bounding_box()
+        assert box and box["width"] >= 60, f"the Show option {name} is squeezed: {box}"
+    ok("the Show switch in Filter and sort has room for each of its options")
     page.get_by_role("dialog", name="Filter and sort").get_by_role("checkbox", name="High").click()
     button(page, "Show tasks").click()
     rows = role(page, "button", re.compile(r"^(Complete AWS|Water the plants|Renew passport)"))
@@ -289,6 +296,15 @@ with sync_playwright() as p:
 
     page.goto(WEB + "/")  # a full page load: everything below comes from the browser's database
     expect(page.get_by_text(re.compile(r"^Done today · 3$", re.I)).filter(visible=True).first).to_be_visible()
+    role(page, "button", re.compile(r"^Done: 3\.")).first.click()
+    expect(page.get_by_text("Showing tasks done today only").filter(visible=True)).to_be_visible()
+    expect(page.get_by_text(re.compile(r"^Today · ", re.I)).filter(visible=True)).to_have_count(0)
+    expect(page.get_by_text(re.compile(r"^Done today · 3$", re.I)).filter(visible=True).first).to_be_visible()
+    role(page, "button", re.compile(r"^Pending: ")).first.click()
+    expect(page.get_by_text(re.compile(r"^Done today · ", re.I)).filter(visible=True)).to_have_count(0)
+    button(page, "Show all").click()
+    expect(page.get_by_text(re.compile(r"^Done today · 3$", re.I)).filter(visible=True).first).to_be_visible()
+    ok("tapping a count on Today shows only those tasks, and Show all brings the rest back")
     go("More")
     expect(page.get_by_text("1 saved filter").filter(visible=True).first).to_be_visible()
     ok("after a reload every task, completion and saved filter is still there (stored in the browser's SQLite)")
@@ -371,9 +387,49 @@ with sync_playwright() as p:
     ok("the new account has a profile with the name that was typed")
 
     # ---- the sign-in return address ------------------------------------------------------------
-    page.goto(WEB + "/auth-callback?error=access_denied&error_description=Email+link+is+invalid+or+has+expired")
-    expect(page.get_by_role("alert").last).to_contain_text("Email link is invalid or has expired")
+    page.goto(WEB + "/auth-callback?error=access_denied&error_description=Something+else+went+wrong")
+    expect(page.get_by_role("alert").last).to_contain_text("Something else went wrong")
     ok("a failed sign-in link shows the reason instead of a blank page")
+
+    # ---- password reset, the whole way round (the mock follows Supabase's PKCE reset) -----------
+    button(page, "Back to sign in").click()
+    page.get_by_role("tab", name="More").click()  # still signed in as the new account
+    button(page, "Sign out").click()
+    page.get_by_role("button", name=re.compile("Forgot password")).filter(visible=True).last.click()
+    expect(page.get_by_role("heading", name="Reset password", exact=True).filter(visible=True)).to_be_visible()
+    field(page, "Email").fill("new.person@example.com")
+    button(page, "Send reset link").click()
+    expect(page.get_by_text("a reset link is on its way", exact=False).filter(visible=True).first).to_be_visible()
+    with urllib.request.urlopen(f"{API}/auth/v1/test/mailbox?email=new.person@example.com") as reply:
+        link = json.load(reply)["link"]
+    page.goto(link)
+    expect(page.get_by_role("heading", name="New password", exact=True).filter(visible=True)).to_be_visible()
+    ok("the reset email's link opens the New password screen")
+    field(page, "New password (at least 8 characters)").fill("a-brand-new-password")
+    button(page, "Save password").click()
+    expect(page.get_by_role("heading", name="Today", exact=True).filter(visible=True)).to_be_visible()
+    ok("saving the new password signs the user in")
+    go_more = page.get_by_role("tab", name="More")
+    go_more.click()
+    button(page, "Sign out").click()
+    field(page, "Email").fill("new.person@example.com")
+    field(page, "Password").fill("a-long-password")
+    button(page, "Sign in").click()
+    expect(page.get_by_role("alert").filter(visible=True).last).to_contain_text("do not match")
+    field(page, "Password").fill("a-brand-new-password")
+    button(page, "Sign in").click()
+    expect(page.get_by_role("heading", name="Today", exact=True).filter(visible=True)).to_be_visible()
+    ok("afterwards the old password is refused and the new one works")
+    page.get_by_role("tab", name="More").click()
+    button(page, "Sign out").click()
+
+    page.goto(link)
+    expect(page.get_by_role("heading", name="That link did not work").filter(visible=True)).to_be_visible()
+    expect(page.get_by_role("alert").filter(visible=True).last).to_contain_text("Each email link works once")
+    ok("opening the same link again explains that each link works once (its error arrives after the #)")
+    button(page, "Get a new link").click()
+    expect(page.get_by_role("heading", name="Reset password", exact=True).filter(visible=True)).to_be_visible()
+    ok("and offers a button straight to asking for a new link")
 
     browser.close()
 

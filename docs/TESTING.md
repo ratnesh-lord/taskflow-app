@@ -35,6 +35,13 @@ It needs Chrome and `pip install playwright` in addition to the database require
 
 It does not cover Google sign-in or the real Supabase sign-in service; the phone checklist does.
 
+## Phone checklist for the fixes after Phase 3
+
+- [ ] Sign out, tap **Forgot password**, send a link, and open the email on the phone. Tap its button once: the app opens **New password**. Save one, and you are signed in.
+- [ ] Tap the same email's button again: the app says the link no longer works and offers **Get a new link**.
+- [ ] On Today, tap **Done**: only "Done today" is listed. Tap **Show all** to see everything again.
+- [ ] In All tasks, open **Filter and sort**: the Open / Completed / Both switch shows three readable options.
+
 ## Phone checklist for Phase 3
 
 Install the newest APK (it installs over the old one). Each line is something only the phone can show.

@@ -9,6 +9,8 @@ export type AuthUrlParams = {
   refreshToken?: string;
   type?: string;
   error?: string;
+  /** Supabase's specific reason, such as otp_expired. */
+  errorCode?: string;
   errorDescription?: string;
 };
 
@@ -49,6 +51,7 @@ export function parseAuthUrl(url: string): AuthUrlParams {
     refreshToken: pick('refresh_token'),
     type: pick('type'),
     error: pick('error') ?? pick('error_code'),
+    errorCode: pick('error_code'),
     errorDescription: pick('error_description'),
   };
 }

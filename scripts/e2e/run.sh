@@ -35,4 +35,4 @@ node scripts/e2e/serve-dist.mjs "${out}" "${web_port}" >/dev/null 2>&1 &
 pids+=($!)
 sleep 2
 
-E2E_DB="${db}" E2E_WEB="http://127.0.0.1:${web_port}" python3 scripts/e2e/check.py
+E2E_DB="${db}" E2E_WEB="http://127.0.0.1:${web_port}" E2E_API="http://127.0.0.1:${api_port}" python3 scripts/e2e/check.py

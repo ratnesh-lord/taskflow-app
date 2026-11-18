@@ -1,17 +1,28 @@
 // A stand-in for the two Supabase services the app talks to, for the web end-to-end check.
 //
 //   /auth/v1/*   a fake sign-in service: any email works with the password "correct-password"
+//                (until it is changed). Password reset follows Supabase's PKCE flow: the
+//                "email" is kept in memory and read back through /auth/v1/test/mailbox; each
+//                link works once, a new request cancels the old link, and a used link comes
+//                back with the error after the # (as Supabase does when it can no longer
+//                tell which flow the link belonged to).
 //   /rest/v1/*   forwards each call to a REAL Postgres database that has the project's
 //                migrations applied, as the signed-in user, so row-level security and the
 //                sync functions run exactly as they would on Supabase
 //
 // Only for tests on this machine. It checks no signatures and must never be exposed.
 import { execFileSync } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
 import http from 'node:http';
 
 const DB = process.env.E2E_DB;
 const PORT = Number(process.env.E2E_API_PORT ?? 54400);
 const PASSWORD = 'correct-password';
+const passwords = new Map(); // user id -> password changed through a reset
+const recoveries = new Map(); // one-time email token -> { email, challenge, redirectTo }
+const codes = new Map(); // auth code -> { email, challenge }
+const mailbox = new Map(); // email -> the newest reset link sent
+const randomToken = () => randomBytes(16).toString('hex');
 if (!DB) throw new Error('E2E_DB is required');
 
 function sql(text) {
@@ -77,7 +88,7 @@ function asUser(sub, statement) {
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
   'Access-Control-Allow-Headers': '*',
   'Access-Control-Max-Age': '600',
 };
@@ -107,7 +118,7 @@ const server = http.createServer((req, res) => {
       // ---- sign-in service -------------------------------------------------
       if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type') === 'password') {
         const user = findUser(`lower(email) = lower(${quote(body.email ?? '')})`);
-        if (!user || body.password !== PASSWORD) {
+        if (!user || body.password !== (passwords.get(user.id) ?? PASSWORD)) {
           return authError(res, 400, 'invalid_credentials', 'Invalid login credentials');
         }
         return send(res, 200, sessionJson(user));
@@ -126,7 +137,56 @@ const server = http.createServer((req, res) => {
           return authError(res, 422, 'weak_password', 'Password should be at least 8 characters');
         }
         const id = sql(`select test.new_user(${quote(body.email)}, ${literal(body.data?.full_name ?? null)})`);
+        passwords.set(id, String(body.password));
         return send(res, 200, sessionJson(findUser(`id = ${quote(id)}`)));
+      }
+      if (url.pathname === '/auth/v1/recover' && req.method === 'POST') {
+        const email = String(body.email ?? '').toLowerCase();
+        if (findUser(`lower(email) = ${quote(email)}`)) {
+          for (const [token, r] of recoveries) if (r.email === email) recoveries.delete(token); // older links stop working
+          const token = randomToken();
+          const redirectTo = url.searchParams.get('redirect_to') ?? '';
+          recoveries.set(token, { email, challenge: body.code_challenge ?? null, redirectTo });
+          mailbox.set(email, `http://${req.headers.host}/auth/v1/verify?token=${token}&type=recovery&redirect_to=${encodeURIComponent(redirectTo)}`);
+        }
+        return send(res, 200, {});
+      }
+      if (url.pathname === '/auth/v1/test/mailbox') {
+        const link = mailbox.get(String(url.searchParams.get('email') ?? '').toLowerCase());
+        return link ? send(res, 200, { link }) : send(res, 404, { message: 'no email' });
+      }
+      if (url.pathname === '/auth/v1/verify' && req.method === 'GET') {
+        const token = url.searchParams.get('token') ?? '';
+        const redirectTo = url.searchParams.get('redirect_to') ?? '';
+        const r = recoveries.get(token);
+        if (!r) {
+          const reason = 'error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired';
+          res.writeHead(303, { Location: `${redirectTo}#${reason}` });
+          return res.end();
+        }
+        recoveries.delete(token);
+        const code = randomToken();
+        codes.set(code, { email: r.email, challenge: r.challenge });
+        res.writeHead(303, { Location: `${r.redirectTo}?code=${code}` });
+        return res.end();
+      }
+      if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type') === 'pkce') {
+        const c = codes.get(String(body.auth_code ?? ''));
+        if (!c) return authError(res, 404, 'flow_state_not_found', 'invalid flow state, no valid flow state found');
+        codes.delete(String(body.auth_code));
+        const challenge = createHash('sha256').update(String(body.code_verifier ?? '')).digest('base64url');
+        if (challenge !== c.challenge) return authError(res, 403, 'bad_code_verifier', 'code challenge does not match previously saved code verifier');
+        return send(res, 200, sessionJson(findUser(`lower(email) = ${quote(c.email)}`)));
+      }
+      if (url.pathname === '/auth/v1/user' && req.method === 'PUT') {
+        const sub = subjectOf(req);
+        const user = sub ? findUser(`id = ${quote(sub)}`) : null;
+        if (!user) return authError(res, 401, 'no_authorization', 'No session');
+        if (body.password !== undefined) {
+          if (String(body.password).length < 8) return authError(res, 422, 'weak_password', 'Password should be at least 8 characters');
+          passwords.set(user.id, String(body.password));
+        }
+        return send(res, 200, userJson(user));
       }
       if (url.pathname === '/auth/v1/user') {
         const sub = subjectOf(req);
