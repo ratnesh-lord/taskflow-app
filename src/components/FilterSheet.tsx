@@ -46,9 +46,12 @@ export function FilterSheet({
           <Button variant="secondary" label="Clear" onPress={() => setDraft({ text: draft.text, sort: draft.sort })} />
         </View>
       }>
-      <Group title="Show">
+      <View style={{ gap: space.sm }}>
+        <Text variant="caption" color="textSecondary">
+          Show
+        </Text>
         <Segmented label="Show" value={draft.show ?? 'open'} options={SHOW} onChange={(show) => set({ show })} />
-      </Group>
+      </View>
 
       <Group title="Due">
         {(Object.keys(DUE_LABEL) as DueFilter[]).map((d) => (
