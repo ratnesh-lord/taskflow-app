@@ -16,7 +16,19 @@ export type IconName =
   | 'check'
   | 'back'
   | 'bell'
-  | 'close';
+  | 'close'
+  | 'repeat'
+  | 'chevron'
+  | 'filter'
+  | 'trash'
+  | 'link'
+  | 'copy'
+  | 'calendar'
+  | 'tag'
+  | 'skip'
+  | 'sort'
+  | 'undo'
+  | 'flag';
 
 function shapes(name: IconName, color: string): ReactNode {
   switch (name) {
@@ -76,6 +88,61 @@ function shapes(name: IconName, color: string): ReactNode {
       );
     case 'close':
       return <Path d="M6 6l12 12M18 6L6 18" />;
+    case 'repeat':
+      return (
+        <>
+          <Path d="M5 9h13l-3-3" />
+          <Path d="M19 15H6l3 3" />
+        </>
+      );
+    case 'chevron':
+      return <Path d="M10 6l6 6-6 6" />;
+    case 'filter':
+      return <Path d="M4 6h16M7 12h10M10 18h4" />;
+    case 'trash':
+      return (
+        <>
+          <Path d="M4 7h16M9 7V4h6v3" />
+          <Path d="M6 7l1 13h10l1-13" />
+        </>
+      );
+    case 'link':
+      return (
+        <>
+          <Path d="M10 14l4-4" />
+          <Path d="M8 11l-3 3 5 5 3-3" />
+          <Path d="M16 13l3-3-5-5-3 3" />
+        </>
+      );
+    case 'copy':
+      return (
+        <>
+          <Rect x={8} y={8} width={12} height={12} />
+          <Path d="M4 16V4h12" />
+        </>
+      );
+    case 'calendar':
+      return (
+        <>
+          <Rect x={4} y={5} width={16} height={15} />
+          <Path d="M4 10h16M8 3v4M16 3v4" />
+        </>
+      );
+    case 'tag':
+      return (
+        <>
+          <Path d="M4 4h8l8 8-8 8-8-8z" />
+          <Rect x={7.5} y={7.5} width={2} height={2} fill={color} stroke="none" />
+        </>
+      );
+    case 'skip':
+      return <Path d="M5 6l7 6-7 6zM14 6l7 6-7 6z" />;
+    case 'sort':
+      return <Path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4" />;
+    case 'undo':
+      return <Path d="M9 5L4 10l5 5M4 10h11a5 5 0 010 10h-3" />;
+    case 'flag':
+      return <Path d="M5 21V4h12l-2 4 2 4H5" />;
   }
 }
 
