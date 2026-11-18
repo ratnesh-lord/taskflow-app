@@ -1,4 +1,4 @@
-import { completedByDay, completedOn, isOverdue, itemOf, nextReminder, progressOf, todayView, upcomingView, type Snapshot } from './agenda';
+import { completedByDay, completedOn, isOverdue, itemOf, nextReminder, progressOf, todaySections, todayView, upcomingView, type Snapshot } from './agenda';
 import { makeTask } from './fixtures';
 import type { OccurrenceRecord } from './recurrence';
 
@@ -164,5 +164,34 @@ describe('completed history', () => {
       ['2026-11-12', ['r@2026-11-12', 'a']],
     ]);
     expect(completedOn(data, '2026-11-14', toLocal).map((i) => i.key)).toEqual(['r@2026-11-14', 'b']);
+  });
+});
+
+describe('Today counts as filters', () => {
+  const view = todayView(
+    snap(
+      [
+        makeTask({ id: 'late', dueDate: '2026-11-12' }),
+        makeTask({ id: 'open', dueDate: '2026-11-14', dueTime: '18:00' }),
+        makeTask({ id: 'done', dueDate: '2026-11-14', status: 'completed', completedAt: '2026-11-14T05:00:00Z' }),
+      ],
+      {},
+    ),
+    now,
+    toLocal,
+  );
+  const keys = (focus: Parameters<typeof todaySections>[1]) =>
+    todaySections(view, focus).map((s) => [s.key, s.items.map((i) => i.key)]);
+
+  it('each count shows exactly the tasks it counts', () => {
+    expect(keys('overdue')).toEqual([['overdue', ['late']]]);
+    expect(keys('pending')).toEqual([['today', ['open']]]);
+    expect(keys('done')).toEqual([['done', ['done']]]);
+    expect(keys('scheduled')).toEqual([['today', ['open']], ['done', ['done']]]);
+    expect(view.stats).toMatchObject({ overdue: 1, pending: 1, done: 1, scheduled: 2 });
+  });
+
+  it('no count chosen shows everything', () => {
+    expect(keys(null).map((k) => k[0])).toEqual(['overdue', 'today', 'done']);
   });
 });

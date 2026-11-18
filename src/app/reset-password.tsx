@@ -37,7 +37,7 @@ export default function ResetPassword() {
           Reset password
         </Text>
         <Text variant="small" color="textSecondary">
-          We email you a link. Open it on this device to choose a new password.
+          We email you a link. Open it on this device, from the newest email: each link works once, for an hour, and a new request cancels the earlier ones.
         </Text>
       </View>
 

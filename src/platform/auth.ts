@@ -8,8 +8,8 @@ import { unregisterDevice } from './device';
 import { getSupabase } from './supabase';
 
 export type AuthOutcome =
-  | { ok: true; note?: string }
-  | { ok: false; message: string; cancelled?: boolean };
+  | { ok: true; note?: string; /** Arrived through a password-reset link. */ recovery?: boolean }
+  | { ok: false; message: string; cancelled?: boolean; /** Asking for a new email would help. */ newLink?: boolean };
 
 type SupabaseAuthError = { message: string; code?: string };
 
@@ -29,10 +29,23 @@ export function describeAuthError(error: SupabaseAuthError): string {
       return 'Too many emails were requested. Wait a few minutes and try again.';
     case 'same_password':
       return 'The new password must differ from the old one.';
+    case 'otp_expired':
+      return LINK_USED;
+    case 'pkce_code_verifier_not_found':
+    case 'flow_state_not_found':
+    case 'flow_state_expired':
+    case 'bad_code_verifier':
+      return OTHER_DEVICE;
     default:
       return error.message || 'Something went wrong. Try again.';
   }
 }
+
+const LINK_USED =
+  'This link no longer works. Each email link works once, for one hour, and asking for another email cancels the earlier ones. Ask for a new link and open the newest email.';
+const OTHER_DEVICE =
+  'Open the link on the same phone or browser where you asked for it; it only works there. Or ask for a new link on this one.';
+const NO_CODE = 'This link is incomplete. Open the newest email from TaskFlow and tap its button again, or ask for a new link.';
 
 function fail(error: SupabaseAuthError): AuthOutcome {
   return { ok: false, message: describeAuthError(error) };
@@ -112,29 +125,38 @@ const inFlight = new Map<string, Promise<AuthOutcome>>();
 export function completeAuthFromUrl(url: string): Promise<AuthOutcome> {
   const params = parseAuthUrl(url);
   const key = params.code ?? params.accessToken ?? params.error;
-  if (!key) {
-    return Promise.resolve({ ok: false, message: 'That link did not contain a sign-in code.' });
-  }
+  if (!key) return Promise.resolve({ ok: false, message: NO_CODE, newLink: true });
   const existing = inFlight.get(key);
   if (existing) return existing;
 
   const run = (async (): Promise<AuthOutcome> => {
     if (params.error) {
-      return { ok: false, message: params.errorDescription ?? 'Sign-in was refused.' };
+      const expired = params.errorCode === 'otp_expired' || /invalid or has expired/i.test(params.errorDescription ?? '');
+      return {
+        ok: false,
+        message: expired ? LINK_USED : (params.errorDescription ?? 'Sign-in was refused.'),
+        newLink: expired,
+      };
     }
     const auth = getSupabase().auth;
     if (params.code) {
-      const { error } = await auth.exchangeCodeForSession(params.code);
-      return error ? fail(error) : { ok: true };
+      // A reset link's code also tells Supabase to announce PASSWORD_RECOVERY,
+      // which moves the app to the new-password screen.
+      const { data, error } = await auth.exchangeCodeForSession(params.code);
+      if (error) return { ...fail(error), newLink: true } as AuthOutcome;
+      // supabase-js returns redirectType at run time but leaves it out of its types.
+      const redirectType = (data as { redirectType?: string | null }).redirectType;
+      return { ok: true, recovery: redirectType === 'recovery' };
     }
     if (params.accessToken && params.refreshToken) {
       const { error } = await auth.setSession({
         access_token: params.accessToken,
         refresh_token: params.refreshToken,
       });
-      return error ? fail(error) : { ok: true };
+      if (error) return { ...fail(error), newLink: true } as AuthOutcome;
+      return { ok: true, recovery: params.type === 'recovery' };
     }
-    return { ok: false, message: 'That link did not contain a sign-in code.' };
+    return { ok: false, message: NO_CODE, newLink: true };
   })();
 
   inFlight.set(key, run);

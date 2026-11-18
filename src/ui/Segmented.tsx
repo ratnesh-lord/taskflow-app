@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useTheme } from '@/state/theme';
 
 import { Text } from './Text';
-import { TOUCH } from './tokens';
+import { space, TOUCH } from './tokens';
 
 export type SegmentedProps<T extends string> = {
   label: string;
@@ -41,6 +41,9 @@ export function Segmented<T extends string>({ label, value, options, onChange }:
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', borderWidth: 1 },
-  option: { flex: 1, minHeight: TOUCH, alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', alignSelf: 'stretch', borderWidth: 1 },
+  // Each option is at least as wide as its label and shares any extra room.
+  // (flex: 1 alone starts from zero width, and in a row that does not fix its
+  // own width, Android squeezed the whole switch to a line.)
+  option: { flexGrow: 1, flexShrink: 0, flexBasis: 'auto', minHeight: TOUCH, paddingHorizontal: space.md, alignItems: 'center', justifyContent: 'center' },
 });

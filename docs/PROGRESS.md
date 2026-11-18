@@ -18,6 +18,13 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - **Design rules in code.** All colour, type and spacing come from `src/ui/tokens.ts`. Lint fails on any border radius.
 - **Automation.** CI runs database tests, app tests, a web end-to-end check and an Android build. One workflow applies migrations to your Supabase project; another does the nightly keep-alive, purge and encrypted backup.
 
+### Fixed after the first phone test
+
+- **Password reset never finished (from Phase 2).** After a reset link signed the user in, the app tried to open the main screen, which stays closed until a new password is set. It fell back to the link screen, which then said "That link did not contain a sign-in code". It now waits for the sign-in to register and opens New password. The web check now runs the whole reset with a stand-in for Supabase's reset service: request, link, new password, old password refused, new one accepted, the same link refused the second time.
+- **Errors sent after the # in a link were lost on the phone.** The link screen now reads the whole link. A used or replaced link now says plainly that each link works once, for an hour, that a new request cancels the old ones, and offers "Get a new link".
+- **The Show switch in Filter and sort was squeezed to a line on Android.** It now always takes the full width. Without it, "Status: Completed" combined with the default "Show: Open" matched nothing.
+- **New: the four counts on Today are filters.** Tap Scheduled, Done, Pending or Overdue to see only those tasks; tap it again, or Show all, for everything.
+
 ### How it was checked
 
 - 197 database assertions pass on Postgres 16 (locally) and are set to run on Postgres 17 in CI.
@@ -59,8 +66,8 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 
 ### How it was checked
 
-- 139 unit tests pass, including 62 quick-add sentences, every repeat rule compared against a brute-force calendar walk over 300 cases, the overdue rule, the Today counts, and the device database (run against real SQLite through Node).
-- 50 web end-to-end checks pass in headless Chrome. New in this phase: the brief's quick-add sentence, an overdue task appearing and being completed and undone, a daily repeat completed with its next days still listed, editing a task, filtering by priority and saving the filter, a project reaching 100%, everything still there after a full page reload, the tab bar staying on screen with a long list, and a second browser tab explaining that the tasks are open in the first.
+- 141 unit tests pass, including 62 quick-add sentences, every repeat rule compared against a brute-force calendar walk over 300 cases, the overdue rule, the Today counts, and the device database (run against real SQLite through Node).
+- 57 web end-to-end checks pass in headless Chrome. New in this phase: the brief's quick-add sentence, an overdue task appearing and being completed and undone, a daily repeat completed with its next days still listed, editing a task, filtering by priority and saving the filter, a project reaching 100%, everything still there after a full page reload, the tab bar staying on screen with a long list, and a second browser tab explaining that the tasks are open in the first.
 - 197 database assertions still pass; no migration changed.
 
 ### Not yet proven
