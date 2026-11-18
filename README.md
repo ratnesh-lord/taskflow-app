@@ -2,7 +2,7 @@
 
 A personal productivity app: tasks, reminders, projects, recurring work and home-screen widgets on Android, with a web view of the same data and cloud sync through Supabase. Built to run on free tiers.
 
-**Status:** Phase 2 of 10. You can create an account, sign in on Android and web, and the app syncs through the database's access rules. Task management starts in Phase 3. See [docs/PROGRESS.md](docs/PROGRESS.md).
+**Status:** Phase 3 of 10. Tasks work fully on one device, offline: quick add in plain English, repeats, projects, categories, tags, subtasks, filters and search. Syncing them between devices is Phase 4, and phone alerts for reminders are Phase 5. See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 | | |
 | --- | --- |
@@ -15,9 +15,12 @@ A personal productivity app: tasks, reminders, projects, recurring work and home
 
 ```text
 src/app/              screens and navigation (Android and web)
-src/core/             pure TypeScript rules, no React: clock for edits, sign-in link parsing
+src/core/             pure TypeScript rules, no React: dates, repeats, quick add, Today and
+                      Upcoming lists, filters, the edit clock, sign-in link parsing
+src/data/             the on-device SQLite database: tables, every edit with undo, sync outbox
+src/components/       task rows and lists, quick add, date, repeat and reminder pickers
 src/platform/         Supabase client, encrypted session storage, sign-in, device registration
-src/state/            session and theme
+src/state/            session, theme, the current minute, the open database
 src/ui/               design tokens and components (square corners, enforced by lint)
 supabase/migrations/  tables, access policies, sync functions
 supabase/tests/       database tests

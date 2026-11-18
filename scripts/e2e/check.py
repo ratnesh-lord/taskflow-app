@@ -292,6 +292,13 @@ with sync_playwright() as p:
     go("More")
     expect(page.get_by_text("1 saved filter").filter(visible=True).first).to_be_visible()
     ok("after a reload every task, completion and saved filter is still there (stored in the browser's SQLite)")
+    assert page.evaluate("() => window.crossOriginIsolated") is False
+    ok("that storage works on an ordinary web host, without special isolation headers")
+    second = context.new_page()
+    second.goto(WEB + "/")
+    expect(second.get_by_role("heading", name="TaskFlow is open in another tab")).to_be_visible(timeout=15000)
+    second.close()
+    ok("a second tab explains that the tasks are open in the first one, instead of failing silently")
     expect(page.get_by_text(re.compile(r"changes will be sent to your account")).filter(visible=True).first).to_be_visible()
     ok("More says the changes wait on this device for syncing")
 

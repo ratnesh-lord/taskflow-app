@@ -44,9 +44,41 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - Google sign-in uses the browser flow, so no Google client library or signing fingerprint is needed. A native account picker can replace it later.
 - `reminders` and other tables carry no rule that compares two columns, because edits merge field by field; those rules live in the app's core.
 
+## Phase 3: tasks on the device (code complete; needs a phone check)
+
+### What works
+
+- **Storage on the device.** Each account gets its own SQLite database on the phone (and in the browser), so tasks open instantly and work with no connection. Every change is one transaction that records which fields changed and when, and queues the edit for Phase 4 to send. Nothing is sent yet.
+- **Quick add** from Today, Inbox, Upcoming, Projects, a project and All tasks. It reads plain English as you type and shows what it understood; tap a recognised piece to keep it as words. The brief's sentence "Complete AWS certification revision tomorrow at 7 PM and remind me 30 minutes before" becomes that title, tomorrow at 19:00, and a reminder 30 minutes before. It also reads weekdays, dates such as 25/12, "in 3 days", repeats ("every weekday", "every mon, wed and fri", "every other week"), priorities (p1, !high, "high priority"), #tags, @project and estimates ("45 min").
+- **Tasks.** Title, description, notes, status (Inbox, Not started, In progress, Waiting, Completed, Archived), priority (Critical, High, Medium, Low), due date and time, project, category, tags, estimate, subtasks, web and Google Drive links, reminders. Complete, reopen, duplicate, delete, reschedule. The editor saves as you type.
+- **Repeats.** Every day, weekday, week, month or year, every N of any of those, chosen weekdays, and an optional last day. Completing one time records it and moves to the next; completing a late one also marks the missed times as skipped, so the list does not fill with old copies. A single time can be skipped or moved without changing the rest. "Every month on the 31st" falls on the last day of shorter months.
+- **Screens.** Today (date, scheduled, done, pending, overdue, completion, next reminder; overdue, today and done lists in time order). Inbox. Upcoming for tomorrow, 7 or 30 days, including later repeats. Projects with progress, open and overdue counts and deadline; a project screen to rename, set a deadline, archive or delete (its tasks are kept). All tasks with search, filters (show open, completed or both; due; priority; status; project; category; tags), sorting and saved filters. Search. Completed, by the day each task was done. Categories.
+- **Bulk edit.** Long-press a task to select it, tap others to add them, then complete, reschedule, set priority, move to a project or delete them together.
+- **Undo** after every change, from the message at the bottom of the screen.
+- **Overdue rule (scenario 11).** A task is overdue once its day has passed, or on its day once its time has passed. Today's count of overdue tasks counts earlier days only; a task due earlier today that is late stays in the Today list, marked red.
+
+### How it was checked
+
+- 139 unit tests pass, including 62 quick-add sentences, every repeat rule compared against a brute-force calendar walk over 300 cases, the overdue rule, the Today counts, and the device database (run against real SQLite through Node).
+- 50 web end-to-end checks pass in headless Chrome. New in this phase: the brief's quick-add sentence, an overdue task appearing and being completed and undone, a daily repeat completed with its next days still listed, editing a task, filtering by priority and saving the filter, a project reaching 100%, everything still there after a full page reload, the tab bar staying on screen with a long list, and a second browser tab explaining that the tasks are open in the first.
+- 197 database assertions still pass; no migration changed.
+
+### Not yet proven
+
+- **On the phone.** The screens have been driven only in a browser. The APK now includes the SQLite module; GitHub Actions builds it. The phone checklist in [TESTING.md](TESTING.md) covers what to try.
+- **Reminders do not alert yet.** They are saved with each task and shown as "Next reminder" on Today; phone alerts arrive in Phase 5, and the reminder sheet says so.
+- **Tasks stay on the device where they were made** until Phase 4. Signing in on a second device shows that device's own (empty) list.
+
+### Decisions in this phase
+
+- Search looks for every typed word in titles, descriptions and notes on the device, so it works offline. The Phase 1 document planned a full-text index in the database; it is not needed while search runs on the device.
+- A repeating task is one task plus one small record per completed, skipped or moved time, so completing a repeat never creates a new task and no future time can be lost. A moved time is stored as "skipped" plus the day it moved to; no table changed.
+- New tasks go to the Inbox unless they have a date, project or category. Giving an Inbox task any of those moves it out.
+- On the web the tasks can be open in one browser tab at a time (a limit of the browser storage SQLite uses). A second tab says so and offers to reload. No special server headers are needed.
+
 ## Remaining work
 
-- [ ] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
+- [x] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
 - [ ] Phase 4: outbox, full push and pull, live updates, conflict handling on devices, export and restore
 - [ ] Phase 5: Kotlin alarm runtime, notification actions, reboot and timezone handling, daily and evening summaries, wake-up push
 - [ ] Phase 6: four home-screen widgets
@@ -56,6 +88,9 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - [ ] Phase 10: release signing key, web deployment, final documentation
 
 Smaller items carried forward:
+
+- [ ] Drag to reorder tasks within a list (the order is stored; there is no drag handle yet)
+- [ ] Colours for projects and categories (stored; no picker yet)
 
 - [ ] Account deletion from inside the app (the database already cascades; the server function and the Settings screen are not written)
 - [ ] Attachment uploads (the storage bucket and its policies exist)

@@ -1,5 +1,5 @@
 import { Stack, useSegments } from 'expo-router';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 
 import { NoticeBar } from '@/components/NoticeBar';
 import { QuickAddProvider } from '@/components/QuickAdd';
@@ -43,18 +43,25 @@ function Gate() {
   }
 
   if (state.status === 'error') {
+    // On the web the database file can be open in one tab only.
+    const otherTab = Platform.OS === 'web' && /access handle/i.test(state.message);
     return (
       <Screen narrow>
         <Text variant="heading" accessibilityRole="header">
-          Your tasks could not be opened
+          {otherTab ? 'TaskFlow is open in another tab' : 'Your tasks could not be opened'}
         </Text>
         <Text variant="small" color="textSecondary">
-          The database on this device reported: {state.message}
+          {otherTab
+            ? 'Your tasks can be open in one browser tab at a time. Close the other tab, then reload this one.'
+            : 'Closing and reopening the app usually fixes this.'}
         </Text>
-        <Text variant="small" color="textSecondary">
-          Closing and reopening the app usually fixes this. On the web, it needs a recent Chrome, Edge or Firefox, and only one tab of TaskFlow at a time.
-        </Text>
+        {otherTab ? null : (
+          <Text variant="caption" color="textSecondary">
+            Details: {state.message}
+          </Text>
+        )}
         <View style={{ gap: space.sm }}>
+          {Platform.OS === 'web' ? <Button label="Reload" onPress={() => window.location.reload()} /> : null}
           <Button variant="secondary" label="Sign out" onPress={() => void signOut()} />
         </View>
       </Screen>

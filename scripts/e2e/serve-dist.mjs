@@ -1,7 +1,6 @@
 // Serves the exported web app. Any path that is not a file gets index.html,
 // which is what a static host is configured to do for a single-page app.
-// The two Cross-Origin headers make the page cross-origin isolated, which
-// expo-sqlite needs in the browser; a real host must send them too.
+// No special headers: the app must work on an ordinary static host.
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -20,11 +19,7 @@ http
     if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
       file = path.join(root, 'index.html');
     }
-    res.writeHead(200, {
-      'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    });
+    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream' });
     fs.createReadStream(file).pipe(res);
   })
   .listen(port, '127.0.0.1', () => console.log(`serving ${root} on http://127.0.0.1:${port}`));
