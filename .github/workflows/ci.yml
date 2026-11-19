@@ -34,8 +34,14 @@ jobs:
       PGPORT: '5432'
       PGUSER: postgres
       PGPASSWORD: postgres
+      REQUIRE_SYNC_TESTS: '1'
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - name: Apply migrations and run the tests
         run: bash supabase/tests/run.sh
 

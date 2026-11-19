@@ -51,6 +51,23 @@ export const TABLES = {
   },
 } satisfies Record<string, Columns>;
 
+/**
+ * Text columns the server stores as time or timestamp. Postgres sends them
+ * back as "19:00:00" and "2026-11-18T13:30:00.123+00:00"; the app keeps
+ * "19:00" and ISO strings ending in Z, so pulled rows are converted.
+ * (A test compares these lists with the real database.)
+ */
+export const TIME_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  tasks: ['due_time'],
+  task_occurrences: ['moved_to_time'],
+};
+export const TIMESTAMP_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  tasks: ['completed_at'],
+  task_occurrences: ['completed_at'],
+  reminders: ['remind_at', 'snoozed_until'],
+  calendar_links: ['last_synced_at'],
+};
+
 export type TableName = keyof typeof TABLES;
 export const TABLE_NAMES = Object.keys(TABLES) as TableName[];
 

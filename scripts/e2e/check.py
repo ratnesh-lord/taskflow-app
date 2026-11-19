@@ -20,6 +20,7 @@ API = os.environ.get("E2E_API", "http://127.0.0.1:54400")
 DB = os.environ["E2E_DB"]
 SHOTS = os.environ.get("E2E_SHOTS", "/tmp/taskflow-e2e")
 EMAIL = "e2e@example.com"
+PASSWORD = "correct-password"
 os.makedirs(SHOTS, exist_ok=True)
 
 passed = 0
@@ -52,6 +53,23 @@ def assert_fits(page, where):
     """The page itself never grows taller than the window: long content scrolls inside the screen."""
     height = page.evaluate("() => [document.body.scrollHeight, window.innerHeight]")
     assert height[0] <= height[1], f"{where} is {height[0]}px tall in a {height[1]}px window"
+
+
+def open_tab(page, name):
+    """Switch tabs and wait for that screen, so the next tap lands on it."""
+    page.get_by_role("tab", name=name).click()
+    expect(page.get_by_role("heading", name=name, exact=True).filter(visible=True)).to_be_visible()
+
+
+def sign_out(page):
+    """Tap Sign out; if changes are still waiting to be sent, the app asks once more."""
+    button(page, "Sign out").click()
+    try:
+        expect(page.get_by_role("heading", name="TaskFlow", exact=True).filter(visible=True)).to_be_visible(timeout=3000)
+    except AssertionError:
+        expect(page.get_by_text("Tap Sign out again to continue.", exact=False).filter(visible=True)).to_be_visible()
+        button(page, "Sign out").click()
+        expect(page.get_by_role("heading", name="TaskFlow", exact=True).filter(visible=True)).to_be_visible()
 
 
 def field(page, label):
@@ -315,24 +333,116 @@ with sync_playwright() as p:
     expect(second.get_by_role("heading", name="TaskFlow is open in another tab")).to_be_visible(timeout=15000)
     second.close()
     ok("a second tab explains that the tasks are open in the first one, instead of failing silently")
-    expect(page.get_by_text(re.compile(r"changes will be sent to your account")).filter(visible=True).first).to_be_visible()
-    ok("More says the changes wait on this device for syncing")
+    expect(page.get_by_text("Every change on this device has been sent.").filter(visible=True)).to_be_visible(timeout=15000)
+    expect(page.get_by_text(re.compile(r"^Synced with your account at ")).filter(visible=True)).to_be_visible()
+    ok("More says every change has been synced with the account")
 
-    # ---- connection check: device -> push -> pull against real Postgres ------------------
-    before = db(f"select timezone from public.profiles where id = '{user_id}'")
-    assert before == "UTC", before
-    button(page, "Check connection").click()
-    expect(page.get_by_text("Sign-in, access rules and sync all work from this device.")).to_be_visible(timeout=15000)
-    ok("the connection check passes all four steps")
+    # ---- sync (Phase 4): this browser's tasks are in the real database --------------------
+    titles = db(f"select string_agg(title, '|' order by title) from public.tasks where user_id = '{user_id}' and deleted_at is null")
+    for t in ["Complete AWS certification revision", "Water the plants", "Renew passport", "Read the networking chapter"]:
+        assert t in titles.split("|"), titles
+    assert db(f"select count(*) from public.task_occurrences where user_id = '{user_id}' and status = 'completed'") == "1"
+    assert db(f"select count(*) from public.saved_filters where user_id = '{user_id}' and name = 'Important'") == "1"
+    ok("every task, repeat completion and saved filter made in this browser is in the database")
+    stamp = db(f"select field_ts ->> 'title' from public.tasks where user_id = '{user_id}' and title = 'Renew passport'")
+    assert re.fullmatch(r"\d{15}:\d{5}:[0-9a-f-]{36}", stamp), stamp
+    ok("each field carries a device timestamp in the agreed format")
     # Chrome reports India's zone under its older name, Asia/Calcutta; both names are the same zone.
     stored = db(f"select timezone from public.profiles where id = '{user_id}'")
     assert stored in ("Asia/Kolkata", "Asia/Calcutta"), stored
-    ok(f"the pushed edit really reached the database (profile timezone is now {stored})")
-    stamp = db(f"select field_ts ->> 'timezone' from public.profiles where id = '{user_id}'")
-    assert re.fullmatch(r"\d{15}:\d{5}:[0-9a-f-]{36}", stamp), stamp
-    ok("the edit carries a device timestamp in the agreed format")
-    assert db(f"select count(*) from public.change_history where row_id = '{user_id}' and old_values ->> 'timezone' = 'UTC'") == "1"
-    ok("the previous value was written to the history")
+    ok(f"the account's time zone was updated from this device ({stored})")
+
+    # ---- a second device: another browser, signed in to the same account --------------------
+    other_context = browser.new_context(
+        viewport={"width": 412, "height": 915}, device_scale_factor=2,
+        timezone_id="Asia/Kolkata", locale="en-GB", color_scheme="light",
+    )
+    other = other_context.new_page()
+    other.on("pageerror", lambda e: problems.append(f"second device page error: {e}"))
+    other.goto(WEB + "/")
+    field(other, "Email").fill(EMAIL)
+    field(other, "Password").fill(PASSWORD)
+    button(other, "Sign in").click()
+    expect(other.get_by_text(re.compile(r"^Done today · 3$", re.I)).filter(visible=True).first).to_be_visible(timeout=15000)
+    open_tab(other, "Upcoming")
+    expect(role(other, "button", re.compile(r"^Complete AWS certification revision, Tomorrow 19:00")).first).to_be_visible()
+    ok("a second device signing in gets every task, with the same dates, times and completions")
+
+    open_tab(other, "Today")
+    button(other, "Quick add").click()
+    field(other, "New task").fill("Made on the second device")
+    button(other, "Add task").click()
+    expect(other.get_by_text("Made on the second device").filter(visible=True).first).to_be_visible()
+    open_tab(page, "Today")
+    expect(page.get_by_text("Made on the second device").filter(visible=True).first).to_be_visible(timeout=15000)
+    ok("a task added on the second device appears on the first by itself, live")
+
+    other_context.set_offline(True)
+    button(other, "Quick add").click()
+    field(other, "New task").fill("Written while offline")
+    button(other, "Add task").click()
+    expect(other.get_by_text(re.compile(r"^Not synced \(No connection\)\. 1 change will go up")).filter(visible=True)).to_be_visible(timeout=15000)
+    ok("offline, the task is saved on the device and Today says it will go up later")
+    assert db(f"select count(*) from public.tasks where user_id = '{user_id}' and title = 'Written while offline'") == "0"
+    other_context.set_offline(False)
+    open_tab(other, "More")
+    button(other, "Sync now").click()
+    expect(other.get_by_text("Every change on this device has been sent.").filter(visible=True)).to_be_visible(timeout=15000)
+    expect(page.get_by_text("Written while offline").filter(visible=True).first).to_be_visible(timeout=15000)
+    ok("back online, it goes up and reaches the first device")
+
+    # The same task edited on both devices: different fields both survive.
+    page.get_by_role("button", name=re.compile(r"^Written while offline")).filter(visible=True).first.click()
+    button(page, "Priority: Medium").click()
+    page.get_by_role("radio", name="Critical").last.click()
+    expect(button(page, "Priority: Critical")).to_be_visible()
+    open_tab(other, "Today")
+    other.get_by_role("button", name=re.compile(r"^Written while offline")).filter(visible=True).first.click()
+    field(other, "Notes").fill("Added on the second device")
+    field(other, "Title").click()
+    expect(page.get_by_text("Added on the second device")).to_have_count(0)
+    expect(field(page, "Notes")).to_have_value("Added on the second device", timeout=15000)
+    expect(button(other, "Priority: Critical")).to_be_visible(timeout=15000)
+    ok("edits to different fields of one task on two devices are merged, not overwritten")
+    other_context.close()
+    button(page, "Back").click()
+
+    # ---- export and restore -----------------------------------------------------------------
+    open_tab(page, "More")
+    with page.expect_download() as download_info:
+        button(page, "Export all data").click()
+    download = download_info.value
+    assert re.fullmatch(r"taskflow-backup-\d{4}-\d\d-\d\d\.json", download.suggested_filename), download.suggested_filename
+    backup_path = f"{SHOTS}/{download.suggested_filename}"
+    download.save_as(backup_path)
+    with open(backup_path) as f:
+        backup = json.load(f)
+    assert backup["format"] == "taskflow-backup" and backup["version"] == 1
+    exported = sorted(t["title"] for t in backup["tables"]["tasks"])
+    assert "Renew passport" in exported and "Written while offline" in exported, exported
+    ok(f"Export all data downloads a backup file with every task ({len(exported)} tasks)")
+
+    open_tab(page, "Today")
+    role(page, "button", re.compile(r"^Written while offline")).first.click()
+    button(page, "Delete").click()
+    expect(role(page, "button", re.compile(r"^Written while offline"))).to_have_count(0)
+    open_tab(page, "More")
+    with page.expect_file_chooser() as chooser_info:
+        button(page, "Restore from a backup").click()
+    chooser_info.value.set_files(backup_path)
+    dialog = page.get_by_role("dialog", name="Restore backup")
+    expect(dialog.get_by_text(re.compile(rf"It holds {len(exported)} tasks"))).to_be_visible()
+    ok("choosing the backup file shows what it holds before anything changes")
+    button(page, "Restore").click()
+    expect(page.get_by_role("alert").filter(has_text="Backup restored").last).to_be_visible()
+    open_tab(page, "Today")
+    expect(role(page, "button", re.compile(r"^Written while offline")).first).to_be_visible()
+    ok("restoring brings back a task deleted after the backup")
+    expect(page.get_by_text("Made on the second device").filter(visible=True).first).to_be_visible()
+    open_tab(page, "More")
+    expect(page.get_by_text("Every change on this device has been sent.").filter(visible=True)).to_be_visible(timeout=15000)
+    assert db(f"select count(*) from public.tasks where user_id = '{user_id}' and title = 'Written while offline' and deleted_at is null") == "1"
+    ok("the restored task is back in the account's database too")
     assert_square(page, "the More screen")
     page.screenshot(path=f"{SHOTS}/04-more-light.png", full_page=True)
 
@@ -366,11 +476,11 @@ with sync_playwright() as p:
     page.set_viewport_size({"width": 412, "height": 915})
 
     # ---- sign out ---------------------------------------------------------------------------
-    button(page, "Sign out").click()
+    sign_out(page)
     expect(page.get_by_role("heading", name="TaskFlow", exact=True).last).to_be_visible()
     ok("Sign out returns to the sign-in screen")
-    assert db(f"select count(*) from public.devices where user_id = '{user_id}'") == "0"
-    ok("signing out removes this browser from the user's devices")
+    assert db(f"select count(*) from public.devices where user_id = '{user_id}'") == "1"
+    ok("signing out removes this browser from the user's devices (the second browser, still signed in, stays)")
     page.reload()
     expect(page.get_by_role("heading", name="TaskFlow", exact=True).last).to_be_visible()
     ok("after a reload the user is still signed out")
@@ -394,7 +504,7 @@ with sync_playwright() as p:
     # ---- password reset, the whole way round (the mock follows Supabase's PKCE reset) -----------
     button(page, "Back to sign in").click()
     page.get_by_role("tab", name="More").click()  # still signed in as the new account
-    button(page, "Sign out").click()
+    sign_out(page)
     page.get_by_role("button", name=re.compile("Forgot password")).filter(visible=True).last.click()
     expect(page.get_by_role("heading", name="Reset password", exact=True).filter(visible=True)).to_be_visible()
     field(page, "Email").fill("new.person@example.com")
@@ -411,7 +521,7 @@ with sync_playwright() as p:
     ok("saving the new password signs the user in")
     go_more = page.get_by_role("tab", name="More")
     go_more.click()
-    button(page, "Sign out").click()
+    sign_out(page)
     field(page, "Email").fill("new.person@example.com")
     field(page, "Password").fill("a-long-password")
     button(page, "Sign in").click()
@@ -421,7 +531,7 @@ with sync_playwright() as p:
     expect(page.get_by_role("heading", name="Today", exact=True).filter(visible=True)).to_be_visible()
     ok("afterwards the old password is refused and the new one works")
     page.get_by_role("tab", name="More").click()
-    button(page, "Sign out").click()
+    sign_out(page)
 
     page.goto(link)
     expect(page.get_by_role("heading", name="That link did not work").filter(visible=True)).to_be_visible()

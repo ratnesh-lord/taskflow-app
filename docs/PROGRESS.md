@@ -18,13 +18,6 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - **Design rules in code.** All colour, type and spacing come from `src/ui/tokens.ts`. Lint fails on any border radius.
 - **Automation.** CI runs database tests, app tests, a web end-to-end check and an Android build. One workflow applies migrations to your Supabase project; another does the nightly keep-alive, purge and encrypted backup.
 
-### Fixed after the first phone test
-
-- **Password reset never finished (from Phase 2).** After a reset link signed the user in, the app tried to open the main screen, which stays closed until a new password is set. It fell back to the link screen, which then said "That link did not contain a sign-in code". It now waits for the sign-in to register and opens New password. The web check now runs the whole reset with a stand-in for Supabase's reset service: request, link, new password, old password refused, new one accepted, the same link refused the second time.
-- **Errors sent after the # in a link were lost on the phone.** The link screen now reads the whole link. A used or replaced link now says plainly that each link works once, for an hour, that a new request cancels the old ones, and offers "Get a new link".
-- **The Show switch in Filter and sort was squeezed to a line on Android.** It now always takes the full width. Without it, "Status: Completed" combined with the default "Show: Open" matched nothing.
-- **New: the four counts on Today are filters.** Tap Scheduled, Done, Pending or Overdue to see only those tasks; tap it again, or Show all, for everything.
-
 ### How it was checked
 
 - 197 database assertions pass on Postgres 16 (locally) and are set to run on Postgres 17 in CI.
@@ -51,7 +44,7 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - Google sign-in uses the browser flow, so no Google client library or signing fingerprint is needed. A native account picker can replace it later.
 - `reminders` and other tables carry no rule that compares two columns, because edits merge field by field; those rules live in the app's core.
 
-## Phase 3: tasks on the device (code complete; needs a phone check)
+## Phase 3: tasks on the device (done; checked on the phone 18 November)
 
 ### What works
 
@@ -64,6 +57,13 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - **Undo** after every change, from the message at the bottom of the screen.
 - **Overdue rule (scenario 11).** A task is overdue once its day has passed, or on its day once its time has passed. Today's count of overdue tasks counts earlier days only; a task due earlier today that is late stays in the Today list, marked red.
 
+### Fixed after the Phase 3 phone test
+
+- **Password reset never finished (from Phase 2).** After a reset link signed the user in, the app tried to open the main screen, which stays closed until a new password is set. It fell back to the link screen, which then said "That link did not contain a sign-in code". It now waits for the sign-in to register and opens New password. The web check now runs the whole reset with a stand-in for Supabase's reset service: request, link, new password, old password refused, new one accepted, the same link refused the second time.
+- **Errors sent after the # in a link were lost on the phone.** The link screen now reads the whole link. A used or replaced link now says plainly that each link works once, for an hour, that a new request cancels the old ones, and offers "Get a new link".
+- **The Show switch in Filter and sort was squeezed to a line on Android.** It now always takes the full width. Without it, "Status: Completed" combined with the default "Show: Open" matched nothing.
+- **New: the four counts on Today are filters.** Tap Scheduled, Done, Pending or Overdue to see only those tasks; tap it again, or Show all, for everything.
+
 ### How it was checked
 
 - 141 unit tests pass, including 62 quick-add sentences, every repeat rule compared against a brute-force calendar walk over 300 cases, the overdue rule, the Today counts, and the device database (run against real SQLite through Node).
@@ -72,9 +72,9 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 
 ### Not yet proven
 
-- **On the phone.** The screens have been driven only in a browser. The APK now includes the SQLite module; GitHub Actions builds it. The phone checklist in [TESTING.md](TESTING.md) covers what to try.
+- ~~On the phone.~~ Done: you ran the Phase 3 phone checklist and the fixes checklist on 18 November and both passed.
 - **Reminders do not alert yet.** They are saved with each task and shown as "Next reminder" on Today; phone alerts arrive in Phase 5, and the reminder sheet says so.
-- **Tasks stay on the device where they were made** until Phase 4. Signing in on a second device shows that device's own (empty) list.
+- ~~Tasks stay on the device where they were made.~~ Phase 4 syncs them.
 
 ### Decisions in this phase
 
@@ -83,10 +83,41 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - New tasks go to the Inbox unless they have a date, project or category. Giving an Inbox task any of those moves it out.
 - On the web the tasks can be open in one browser tab at a time (a limit of the browser storage SQLite uses). A second tab says so and offers to reload. No special server headers are needed.
 
+## Phase 4: sync between devices (code complete; needs a phone check)
+
+### What works
+
+- **Everything syncs with your account.** Tasks, projects, categories, tags, subtasks, reminders, repeat records, links and saved filters. Edits made on the phone go up about 1.5 seconds after the last change; edits made elsewhere come down by themselves.
+- **Live updates.** The app listens (through Supabase Realtime) for the account's revision number going up. When another device saved the change, this one pulls straight away. As a safety net it also syncs when the app comes back to the front, when a browser comes back online, and every five minutes while open.
+- **Offline.** Every edit is saved on the device first and waits in a queue. Today shows "Not synced (No connection). 3 changes will go up when the connection is back." Failed attempts retry after 5 s, 15 s, 30 s, 1 min, 2 min, then every 5 min, and at once when you open the app again or tap **Sync now**.
+- **Conflicts.** Edits merge field by field. Changing the title on the phone and the priority on the computer keeps both. When both change the same field, the later edit wins on every device, whichever syncs first. A field with an edit still waiting on this device is never overwritten by an incoming change.
+- **A device that was away a long time** (more than the 90 days deleted items are kept) first sends what it has, then drops its copy and downloads everything again.
+- **Sync status in More.** When it last synced, how many changes are waiting, **Sync now**, and a list of any changes the server refused (for example, a task whose project was deleted on another device), which then stay on that device only.
+- **Signing out with unsent changes** asks once more: the changes stay on the device and go up at the next sign-in there.
+- **Export and restore (More → Backup).** **Export all data** writes one JSON file (on the phone, through the share sheet, so you can save it to Files or Drive; in a browser, a download). **Restore from a backup** shows what the file holds, then brings each item back to how it was in the file, including ones deleted since. Items made after the backup are left alone. A restore can be undone and syncs like any other change.
+- **Time zone.** After the first sync, the account's time zone is set from the device (Phase 5 uses it for summaries).
+
+### How it was checked
+
+- **Two devices against the real database functions** (`src/data/sync.db.test.ts`, 11 tests, run by `npm run test:db` and in CI): every detail of a task arrives on the other device; different fields edited offline on two devices both survive; the later edit to the same field wins in both sync orders; deleting and undoing a delete reach the other device; one repeat ticked on two devices stays one record; a waiting field is not overwritten by a pull; 20 tasks made offline go up together; a device too far behind starts over without losing its own unsent task; a refused edit is listed as a problem; one account never receives another's tasks; and the app's tables match the server's columns, types and required fields exactly. Two deliberate breaks of the merge code were each caught by these tests.
+- **Web end-to-end, 65 checks**, now with a second browser signed in to the same account and a stand-in Realtime server: tasks made in the first browser are in the database; the second browser gets all of them; a task added there appears in the first by itself; a task written offline waits, shows the offline line, then goes up and arrives; edits to two fields of one task in two browsers merge; export downloads a complete backup; a task deleted after it comes back on restore and in the database.
+- 149 unit tests pass (the 11 two-device tests above run with the database tests), including the sync timing (debounce, one more run after asks during a sync, back-off, Sync now cutting a wait short) and export and restore.
+
+### Not yet proven
+
+- **On the phone, against your real Supabase project.** Realtime has only been tested against the stand-in server; the real one is the same protocol, but only the phone checklist in [TESTING.md](TESTING.md) proves it. The same goes for the share sheet and file picker used by export and restore, which are new Android modules in this APK.
+- **Very large accounts.** Tested with dozens of tasks, not thousands. Pages of 1,000 changes and batches of 200 edits are designed for it, but not measured.
+
+### Decisions in this phase
+
+- Deleted items stay on the device (marked deleted) rather than being cleared after 90 days like on the server. They take little space; clearing them can come later.
+- A restore merges rather than replacing everything, so nothing made after the backup is lost by mistake.
+- The Phase 2 "Check connection" button is gone; the Sync section replaces it.
+
 ## Remaining work
 
 - [x] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
-- [ ] Phase 4: outbox, full push and pull, live updates, conflict handling on devices, export and restore
+- [x] Phase 4: outbox, full push and pull, live updates, conflict handling on devices, export and restore
 - [ ] Phase 5: Kotlin alarm runtime, notification actions, reboot and timezone handling, daily and evening summaries, wake-up push
 - [ ] Phase 6: four home-screen widgets
 - [ ] Phase 7: calendar views, drag to reschedule, Google Calendar, Drive and Tasks

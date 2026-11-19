@@ -95,6 +95,21 @@ Open **Actions > Daily maintenance > Run workflow**. It should finish green and 
 
 To open a backup: `gpg --decrypt taskflow-backup-DATE.tar.gz.gpg | tar xz` and enter the passphrase.
 
+## 9. Run the web app on your computer (optional)
+
+Useful as a second device while testing sync. You need Node.js (the LTS version, from nodejs.org) and Git.
+
+```bash
+git clone https://github.com/ratnesh-lord/taskflow-app
+cd taskflow-app
+npm install
+copy .env.example .env        # on macOS or Linux: cp .env.example .env
+```
+
+Open `.env` and fill in the two values from step 4 (the Project URL and the **publishable** key; never the secret key). Then run `npm run web`: the app opens at http://localhost:8081. Sign in with your usual account. To see it at phone size, press F12, then Ctrl+Shift+M.
+
+Tasks in the browser are kept in that browser and synced with your account, like on the phone. The browser can have TaskFlow open in one tab at a time.
+
 ## What costs money
 
 Nothing above. The limits that matter are listed in the architecture document; the short version is 500 MB of database and 1 GB of files on Supabase, which a single person's tasks will not approach.

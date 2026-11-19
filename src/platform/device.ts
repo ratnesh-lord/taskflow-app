@@ -22,6 +22,15 @@ export async function getDeviceId(): Promise<string> {
   return id;
 }
 
+/** This device's time zone name, such as Asia/Kolkata. */
+export function deviceTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 export function devicePlatform(): 'android' | 'ios' | 'web' {
   return Platform.OS === 'ios' ? 'ios' : Platform.OS === 'web' ? 'web' : 'android';
 }
