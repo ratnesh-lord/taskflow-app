@@ -1,15 +1,16 @@
 # Testing
 
-Six layers of automated checks run on every push (GitHub Actions, workflow **CI**). After them comes a short checklist on the real phone, because some things only a phone can prove.
+Seven layers of automated checks run on every push (GitHub Actions, workflow **CI**). After them comes a short checklist on the real phone, because some things only a phone can prove.
 
 | Layer | What it proves | Run it yourself |
 | --- | --- | --- |
 | Database tests | Access rules, merging, paging, purge, concurrency, on a real Postgres with the project's migrations; then the app's sync engine with two devices against those same functions | `npm run test:db` (after `npm ci`) |
-| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
+| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, Mark completed from a notification, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
 | Typecheck and lint | Types are sound; no rounded corner anywhere in the code | `npm run typecheck`, `npm run lint` |
 | Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, sign out | `bash scripts/e2e/run.sh` |
 | App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
-| Android build | The app compiles and packages into an installable APK | GitHub Actions only |
+| Alarm runtime rules | The Kotlin alarm runtime's time-zone, due, late and summary rules, on an ordinary JVM | `bash modules/taskflow-alarms/test-kotlin.sh` (needs `kotlinc`) |
+| Android build | The app, including the Kotlin alarm runtime, compiles and packages into an installable APK | GitHub Actions only |
 
 ## What the database tests cover
 
@@ -35,6 +36,20 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres npm run test:db
 It needs Chrome and `pip install playwright` in addition to the database requirements above. Screenshots are written to `/tmp/taskflow-e2e`.
 
 It does not cover Google sign-in, the real Supabase sign-in service or the real Realtime service; the phone checklist does.
+
+## Phone checklist for Phase 5
+
+Install the newest APK over the old one and open it once.
+
+- [ ] **More → Reminders and summaries.** Notifications, On-time alarms and Battery each show a tick, or a button: tap it and allow. For Battery choose Unrestricted. Planned shows a number of notifications.
+- [ ] Tap **Send a test reminder in 10 seconds**, then close the app completely (swipe it away from recent apps). The test notification arrives.
+- [ ] Quick add a task due about 5 minutes from now with a reminder 2 minutes before, for example *Stretch today at 6:45pm and remind me 2 minutes before*. Close the app. The reminder arrives on time with Mark completed and two Snooze buttons.
+- [ ] Tap **Mark completed** on it. Open the app: the task is under Done today, and on the computer too.
+- [ ] Do the same with another task and tap **Snooze 10 min**: it comes back 10 minutes later.
+- [ ] Set a reminder about 10 minutes ahead, then restart the phone and do not open the app. The reminder still arrives.
+- [ ] Set the **Morning plan** to the next half hour (More → Reminders and summaries). At that time a notification lists today's and overdue tasks.
+- [ ] On the computer, add a task due in two hours with a reminder 1 hour before. Leave the phone app closed. Note when (or whether) the phone's reminder arrives; this shows how often your phone lets the background sync run.
+- [ ] Optional: in Android settings turn off automatic time zone and pick another zone. A reminder set for a clock time arrives at that clock time in the new zone.
 
 ## Phone checklist for Phase 4
 
@@ -83,11 +98,11 @@ Run these on the phone after [setup](SETUP.md). Each line is something no automa
 
 | # | Scenario | Status |
 | --- | --- | --- |
-| 1 to 3 | Notifications: delivery, app closed, after restart | Phase 5 |
+| 1 to 3 | Notifications: delivery, app closed, after restart | Planning and the runtime's rules tested now; firing only on the phone (checklist above) |
 | 4, 5 | Complete from the widget; widget changes sync | Phase 6 |
 | 6, 7 | Create offline; sync on reconnect | Tested now: sync engine against the database, and two browsers in the web check; phone checklist below |
 | 8 | Edit the same task on two devices | Tested now: database rules, sync engine with two devices, two browsers; phone checklist below |
 | 9 | Recurring tasks | Repeat rules, completing, skipping and moving one time tested now (unit and web); calendar views in Phase 7 |
-| 10 | Timezone change | Phase 5 |
+| 10 | Timezone change | Runtime rules tested now (wall-clock times, fixed zones, daylight-saving gap); on the phone in the checklist above |
 | 11 | Overdue calculation | Tested now: unit tests of the rule and the Today counts, and the web check |
 | 12 | Users cannot access other users' tasks | Tested now, automatically, on every push |
