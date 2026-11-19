@@ -75,7 +75,7 @@ describe('planning notifications', () => {
 
   it('a reminder for an exact moment is an instant, not a wall-clock time', () => {
     const t = makeTask({ title: 'Ring the plumber', dueDate: '2026-11-20' });
-    const at = '2026-11-20T09:30:00.000Z'; // 15:00 in India
+    const at = new Date(nowMs + 5 * 3_600_000).toISOString(); // five hours from now, in any time zone
     const [a] = plan([t], [{ id: 'abs', taskId: t.id, kind: 'absolute', remindAt: at, offsetMinutes: null, isActive: true }]);
     expect(a).toMatchObject({ at: Date.parse(at), key: `a:abs:${at}` });
     expect(a.local).toBeUndefined();
