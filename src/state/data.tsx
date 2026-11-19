@@ -9,6 +9,8 @@ import { type SyncReason, SyncScheduler, type SyncStatus } from '@/data/schedule
 import { Store, type UndoLog } from '@/data/store';
 import { PROBLEMS_KEY, readProblems, SyncEngine, type SyncProblem } from '@/data/sync';
 import { deviceTimezone, getDeviceId } from '@/platform/device';
+import { registerBackgroundWork, setForegroundWorker } from '@/platform/background';
+import { onNotificationTap, remindersOnDevice, replan, takeNotificationTaps } from '@/platform/reminders';
 import { supabaseTransport, watchAccount } from '@/platform/sync';
 
 import { useSession } from './session';
@@ -64,12 +66,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!userId) return;
     let alive = true;
+    const cleanupsOuter: (() => void)[] = [];
     let store: Store | null = null;
     let scheduler: SyncScheduler | null = null;
     const cleanups: (() => void)[] = [];
     let unsubscribe: (() => void) | undefined;
     let loading = false;
     let again = false;
+
+    // Notifications: replanned a second after the data settles; taps on notifications taken in first.
+    let latest: DataSnapshot | null = null;
+    let tapsTakenAt = Date.now();
+    let planTimer: ReturnType<typeof setTimeout> | null = null;
+    const planSoon = () => {
+      if (!remindersOnDevice) return;
+      if (planTimer) clearTimeout(planTimer);
+      planTimer = setTimeout(() => {
+        planTimer = null;
+        if (latest && alive) replan(latest, tapsTakenAt).catch(() => {});
+      }, 1000);
+    };
+    const takeTaps = async (actions: Actions) => {
+      if (!remindersOnDevice) return;
+      const { taken } = await takeNotificationTaps(actions).catch(() => ({ taken: Date.now() }));
+      tapsTakenAt = taken;
+      planSoon();
+    };
+    cleanupsOuter.push(() => {
+      if (planTimer) clearTimeout(planTimer);
+    });
 
     const reload = async (actions: Actions) => {
       if (loading) {
@@ -82,6 +107,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         try {
           const data = await loadSnapshot(store!);
           if (alive) setState({ status: 'ready', data, actions });
+          latest = data;
+          planSoon();
         } catch (e) {
           if (alive) setState({ status: 'error', message: e instanceof Error ? e.message : String(e) });
         }
@@ -132,8 +159,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
         cleanups.push(watchAccount(userId, deviceId, () => ask('remote')));
         const appState = AppState.addEventListener('change', (next) => {
-          if (next === 'active') ask('foreground');
+          if (next === 'active') {
+            ask('foreground');
+            void takeTaps(actions);
+          }
         });
+        cleanups.push(onNotificationTap(() => void takeTaps(actions)));
         cleanups.push(() => appState.remove());
         // In a browser, the connection coming back is announced directly.
         if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -147,7 +178,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
         cleanups.push(() => clearInterval(interval));
 
         await reload(actions);
+        await takeTaps(actions);
         ask('start');
+
+        // While these screens are running, background work goes through them.
+        setForegroundWorker(async () => {
+          await takeTaps(actions);
+          await engine.run().catch(() => {});
+          planSoon();
+        });
+        cleanups.push(() => setForegroundWorker(null));
+        void registerBackgroundWork();
       } catch (e) {
         if (alive) {
           const message = e instanceof Error ? e.message : String(e);
@@ -161,6 +202,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       unsubscribe?.();
       scheduler?.stop();
       for (const c of cleanups) c();
+      for (const c of cleanupsOuter) c();
       store?.close().catch(() => {});
     };
   }, [userId]);

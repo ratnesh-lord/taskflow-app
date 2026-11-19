@@ -42,6 +42,8 @@ export type DataSnapshot = {
   savedFilters: SavedFilterRecord[];
   /** Edits waiting to be sent to the server. */
   pendingEdits: number;
+  /** The account's profile, once it has arrived from the server. */
+  profile: { timezone: string; settings: Record<string, unknown> } | null;
 };
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -95,6 +97,7 @@ export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
     store.rows('saved_filters'),
     store.outboxCount(),
   ]);
+  const [profileRow] = await store.rows('profiles');
 
   const liveTasks = new Set(tasks.map((t) => t.id));
   const liveTags = new Set(tags.map((t) => t.id));
@@ -152,5 +155,11 @@ export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
       .map((r) => ({ id: r.id, name: str(r.name), filter: readFilter(r.query), sortOrder: num(r.sort_order) }))
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
     pendingEdits: pending,
+    profile: profileRow
+      ? {
+          timezone: str(profileRow.timezone) || 'UTC',
+          settings: profileRow.settings && typeof profileRow.settings === 'object' ? (profileRow.settings as Record<string, unknown>) : {},
+        }
+      : null,
   };
 }

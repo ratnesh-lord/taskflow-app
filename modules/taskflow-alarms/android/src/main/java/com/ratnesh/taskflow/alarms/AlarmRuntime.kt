@@ -214,6 +214,9 @@ object AlarmRuntime {
       "sdk" to Build.VERSION.SDK_INT,
       "manufacturer" to Build.MANUFACTURER,
       "planned" to AlarmStore(context).plan.size,
+      "next" to AlarmStore(context).let { st ->
+        AlarmMath.next(st.plan + st.snoozes, st.fired, st.done.keys, System.currentTimeMillis(), ZoneId.systemDefault())?.toDouble()
+      },
     )
   }
 

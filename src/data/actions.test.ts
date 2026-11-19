@@ -282,3 +282,46 @@ describe('projects, categories and saved filters', () => {
     expect((await snap()).pendingEdits).toBe(3);
   });
 });
+
+describe('Mark completed from a notification', () => {
+  it('completes a one-off task once; a second tap changes nothing', async () => {
+    const { actions, snap } = await setup();
+    const { id } = await actions.createTask({ title: 'Pay rent', dueDate: '2026-11-14', dueTime: '18:00' });
+    expect(await actions.completeFromNotification(id, null, moment)).toBe(true);
+    expect(taskIn(await snap(), id).status).toBe('completed');
+    expect(await actions.completeFromNotification(id, null, moment)).toBe(false);
+  });
+
+  it("completes exactly the day the notification was for, never the next day's", async () => {
+    const { actions, snap } = await setup();
+    const { id } = await actions.createTask({ title: 'Water the plants', dueDate: '2026-11-14', rrule: 'FREQ=DAILY' });
+    expect(await actions.completeFromNotification(id, '2026-11-14', moment)).toBe(true);
+    // The same notification tapped again (or after the app already ticked it): nothing more.
+    expect(await actions.completeFromNotification(id, '2026-11-14', moment)).toBe(false);
+    const records = (await snap()).occurrences.get(id) ?? [];
+    expect(records.map((r) => [r.date, r.status])).toEqual([['2026-11-14', 'completed']]);
+  });
+
+  it('a tap for a task deleted since does nothing', async () => {
+    const { actions } = await setup();
+    const { id } = await actions.createTask({ title: 'Gone' });
+    await actions.deleteTasks([id]);
+    expect(await actions.completeFromNotification(id, null, moment)).toBe(false);
+  });
+});
+
+describe('summary settings', () => {
+  it('are kept in the profile beside other settings, and can be undone', async () => {
+    const { store, actions, snap } = await setup();
+    await store.applyRemote({ profiles: [{ id: USER, timezone: 'Asia/Kolkata', settings: { theme: 'dark' }, rev: 1 }] });
+    const undo = await actions.setSummaries(USER, { morning: '07:30', evening: null });
+    expect((await snap()).profile?.settings).toEqual({ theme: 'dark', notifications: { morning: '07:30', evening: null } });
+    await actions.undo(undo);
+    expect((await snap()).profile?.settings).toEqual({ theme: 'dark' });
+  });
+
+  it('wait for the profile to arrive from the account', async () => {
+    const { actions } = await setup();
+    await expect(actions.setSummaries(USER, { morning: '08:00', evening: '21:00' })).rejects.toThrow('has not arrived');
+  });
+});

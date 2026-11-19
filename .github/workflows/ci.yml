@@ -63,6 +63,11 @@ jobs:
         run: npm test
       - name: Tests for the app-settings check
         run: bash scripts/ci/check-app-settings.test.sh
+      - name: Alarm runtime rules (plain Kotlin on the JVM)
+        run: |
+          curl -sSL --retry 3 -o /tmp/kotlinc.zip https://github.com/JetBrains/kotlin/releases/download/v2.2.0/kotlin-compiler-2.2.0.zip
+          unzip -q /tmp/kotlinc.zip -d /tmp
+          KOTLINC=/tmp/kotlinc/bin/kotlinc bash modules/taskflow-alarms/test-kotlin.sh
       - name: Bundle for Android
         env:
           EXPO_PUBLIC_SUPABASE_URL: https://example.supabase.co

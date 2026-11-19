@@ -3,10 +3,11 @@
  * and returns an undo log, so any of them can be reversed with one tap.
  */
 import { seriesOf } from '@/core/agenda';
+import type { SummarySettings } from '@/core/alarms';
 import { type LocalDate, type LocalTime, localDateOf, toMoment } from '@/core/dates';
 import { normaliseTagName, occurrenceId, tagId, taskTagId } from '@/core/ids';
 import type { QuickAdd, ReminderDraft } from '@/core/quick-add';
-import { type OccurrenceRecord, planCompletion, planMove, planSkip } from '@/core/recurrence';
+import { currentOccurrence, type OccurrenceRecord, planCompletion, planMove, planSkip } from '@/core/recurrence';
 import type { TaskFilter } from '@/core/filters';
 import type { Priority, TaskStatus } from '@/core/types';
 import { isOpenStatus } from '@/core/types';
@@ -301,6 +302,39 @@ export class Actions {
     await this.patchTask(tx, id, { status: 'completed' });
   }
 
+  /**
+   * "Mark completed" pressed on a notification, perhaps a while ago. Completes
+   * that very occurrence, and does nothing if it is already done (on this
+   * device or, after a sync, on another), so a late tap never ticks off the
+   * next one.
+   */
+  async completeFromNotification(taskId: string, occurrenceDate: LocalDate | null, at: Date): Promise<boolean> {
+    const { result } = await this.store.transaction(async (tx) => {
+      const row = await tx.get('tasks', taskId);
+      if (!row || row.deleted_at) return false;
+      const task = toTask(row);
+      if (!isOpenStatus(task.status)) return false;
+      const series = seriesOf(task);
+      if (!series || !occurrenceDate) {
+        if (series) return false;
+        await this.patchTask(tx, taskId, { status: 'completed' });
+        return true;
+      }
+      const records = await this.records(tx, taskId);
+      const record = records.find((r) => r.date === occurrenceDate);
+      if (record && (record.status === 'completed' || (record.status === 'skipped' && !record.movedToDate))) return false;
+      const current = currentOccurrence(series, records);
+      if (current?.date === occurrenceDate) {
+        await this.completeOne(tx, taskId);
+        return true;
+      }
+      if (current && occurrenceDate < current.date) return false; // an earlier time, already passed by
+      await this.writeOccurrence(tx, taskId, { date: occurrenceDate, status: 'completed', completedAt: at.toISOString(), movedToDate: null, movedToTime: null });
+      return true;
+    });
+    return result;
+  }
+
   /** Back to open: a one-off task, or one completed occurrence of a repeating task. */
   async reopen(taskId: string, occurrenceDate?: LocalDate): Promise<UndoLog> {
     const { undo } = await this.store.transaction(async (tx) => {
@@ -439,6 +473,17 @@ export class Actions {
   /** Bring every item in a backup back to how it was; returns an undo log. */
   restoreBackup(backup: Backup): Promise<{ changed: number; undo: UndoLog }> {
     return restoreBackup(this.store, backup);
+  }
+
+  /** Morning plan and evening check times (null = off), kept in the profile so every device uses them. */
+  async setSummaries(userId: string, summaries: SummarySettings): Promise<UndoLog> {
+    const { undo } = await this.store.transaction(async (tx) => {
+      const profile = await tx.get('profiles', userId);
+      if (!profile) throw new InvalidInput('Your profile has not arrived from your account yet. Sync, then try again.');
+      const settings = (profile.settings && typeof profile.settings === 'object' ? profile.settings : {}) as Record<string, unknown>;
+      await tx.write('profiles', userId, { settings: { ...settings, notifications: { morning: summaries.morning, evening: summaries.evening } } });
+    });
+    return undo;
   }
 
   /**

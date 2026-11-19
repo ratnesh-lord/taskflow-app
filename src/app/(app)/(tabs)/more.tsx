@@ -67,6 +67,7 @@ export default function More() {
         <MenuRow icon="filter" label="All tasks and filters" detail={data.savedFilters.length ? plural(data.savedFilters.length, 'saved filter') : undefined} onPress={() => router.push('/all-tasks')} />
         <MenuRow icon="search" label="Search" onPress={() => router.push('/search')} />
         <MenuRow icon="check" label="Completed" onPress={() => router.push('/completed')} />
+        <MenuRow icon="bell" label="Reminders and summaries" onPress={() => router.push('/reminders')} />
         <MenuRow icon="tag" label="Categories" detail={data.categories.length ? String(data.categories.length) : undefined} onPress={() => router.push('/categories')} />
         <Text variant="caption" color="textSecondary" style={{ paddingTop: space.sm }}>
           Your tasks are saved on this device, so they work offline, and synced with your account.

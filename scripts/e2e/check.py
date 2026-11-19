@@ -407,6 +407,28 @@ with sync_playwright() as p:
     other_context.close()
     button(page, "Back").click()
 
+    # ---- reminders settings (Phase 5; the alarms themselves need the Android app) -------------
+    open_tab(page, "More")
+    button(page, "Reminders and summaries").click()
+    expect(page.get_by_role("heading", name="Reminders", exact=True).filter(visible=True)).to_be_visible()
+    expect(page.get_by_text(re.compile(r"^In a browser, reminders are saved and synced to your phone")).filter(visible=True)).to_be_visible()
+    ok("in a browser, the Reminders page says the phone app shows the reminders")
+    button(page, "Morning plan: 08:00").click()
+    page.get_by_role("radio", name="07:30").last.click()
+    expect(button(page, "Morning plan: 07:30")).to_be_visible()
+    button(page, "Evening check: 21:00").click()
+    page.get_by_role("radio", name="Off").last.click()
+    expect(button(page, "Evening check: Off")).to_be_visible()
+    for _ in range(30):
+        settings = db(f"select settings -> 'notifications' from public.profiles where id = '{user_id}'")
+        if settings and json.loads(settings) == {"morning": "07:30", "evening": None}:
+            break
+        page.wait_for_timeout(500)
+    assert json.loads(settings) == {"morning": "07:30", "evening": None}, settings
+    ok("summary times are saved to the account, so every device uses them")
+    assert_square(page, "the Reminders page")
+    button(page, "Back").click()
+
     # ---- export and restore -----------------------------------------------------------------
     open_tab(page, "More")
     with page.expect_download() as download_info:

@@ -12,6 +12,8 @@ export type AlarmStatus = {
   sdk: number;
   manufacturer: string;
   planned: number;
+  /** When the next notification is due (ms), or null. */
+  next: number | null;
 };
 
 type Native = {
