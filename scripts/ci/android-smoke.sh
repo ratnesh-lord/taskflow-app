@@ -17,9 +17,11 @@ pid="$(adb shell pidof "$pkg" | tr -d '\r')"
 adb logcat -d -v time > "$out/logcat-full.txt"
 grep -E "AndroidRuntime|ReactNativeJS|$pkg|ExpoModulesCore|TaskManager|BackgroundTask|taskflow|FATAL|DEBUG +:" "$out/logcat-full.txt" > "$out/logcat-app.txt" || true
 
-echo "---- crash lines ----"
-grep -E "FATAL EXCEPTION|AndroidRuntime: |Fatal signal|ReactNativeJS: .*(Error|Exception)|E ReactNativeJS" "$out/logcat-full.txt" | head -80 || true
-echo "---------------------"
+echo "---- crashes, with their stack traces ----"
+grep -E -A45 "FATAL EXCEPTION|Fatal signal" "$out/logcat-full.txt" | cut -c1-300 | head -150 || true
+echo "---- JavaScript errors ----"
+grep -E "ReactNativeJS|ExpoModulesCore" "$out/logcat-full.txt" | grep -iE "error|exception|warn" | cut -c1-400 | head -40 || true
+echo "-------------------------------------------"
 
 if [ -z "$pid" ]; then
   echo "The app is not running 40 seconds after it was started: it crashed or closed." >&2
