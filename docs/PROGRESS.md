@@ -133,6 +133,10 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - **Mark completed from a notification** (5 tests): once only, the right day of a repeat, nothing for a deleted task; summary settings saved in the profile with undo.
 - **Web check, 68 checks**, now including the Reminders page in a browser and the summary times reaching the account's database.
 
+### Fixed after the first phone install
+
+- **The app stopped at launch ("TaskFlow keeps stopping").** Release builds are shrunk by R8, which removed a constructor that WorkManager (brought in for background sync) calls by reflection, so the app failed before any of its own code ran. Keep rules for it are now added at build time. Found and confirmed with a new check: the release app is started on an Android 15 emulator in GitHub Actions on every pull request, sent the restart, time-zone and alarm signals the runtime listens for, and must still be running afterwards.
+
 ### Not yet proven
 
 - **Everything on the phone.** No alarm has gone off on a real device yet: firing with the app closed, the buttons, restart, time zone change, the permission prompt and the battery screen are all for the phone checklist in [TESTING.md](TESTING.md). The runtime has been compiled, not run.
