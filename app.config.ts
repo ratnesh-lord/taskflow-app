@@ -27,6 +27,20 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   plugins: [
     'expo-router',
+    [
+      'expo-build-properties',
+      {
+        android: {
+          // Release builds are shrunk by R8, which removed the constructor WorkManager
+          // (used by expo-background-task) calls by reflection to open its database:
+          // the Phase 5 build stopped at launch. Keep Room databases' constructors.
+          extraProguardRules: [
+            '-keep class * extends androidx.room.RoomDatabase { <init>(); }',
+            '-keep class androidx.work.impl.WorkDatabase_Impl { *; }',
+          ].join('\n'),
+        },
+      },
+    ],
     'expo-secure-store',
     'expo-web-browser',
     [
