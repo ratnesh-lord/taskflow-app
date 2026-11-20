@@ -1,6 +1,6 @@
 # Testing
 
-Seven layers of automated checks run on every push (GitHub Actions, workflow **CI**). After them comes a short checklist on the real phone, because some things only a phone can prove.
+Eight layers of automated checks run on every push (GitHub Actions, workflow **CI**). After them comes a short checklist on the real phone, because some things only a phone can prove.
 
 | Layer | What it proves | Run it yourself |
 | --- | --- | --- |
@@ -11,6 +11,7 @@ Seven layers of automated checks run on every push (GitHub Actions, workflow **C
 | App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
 | Alarm runtime rules | The Kotlin alarm runtime's time-zone, due, late and summary rules, on an ordinary JVM | `bash modules/taskflow-alarms/test-kotlin.sh` (needs `kotlinc`) |
 | Android build | The app, including the Kotlin alarm runtime, compiles and packages into an installable APK | GitHub Actions only |
+| Android start-up | The release app starts on an Android 15 emulator and survives a restart, a time-zone change and an alarm signal; crash traces are printed in the log | GitHub Actions only (workflow **Android smoke test**) |
 
 ## What the database tests cover
 
