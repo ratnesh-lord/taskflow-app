@@ -1,0 +1,24 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Show reminders (asked for at run time on Android 13 and later). -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <!-- Put alarms back after the phone restarts. -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <!-- Exact alarms: granted with the app on Android 13 and later, asked for on 12. -->
+  <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+  <!-- Lets the Reminders screen offer the "don't optimise battery" prompt. -->
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+  <application>
+    <receiver android:name=".AlarmReceiver" android:exported="false" />
+    <receiver android:name=".ActionReceiver" android:exported="false" />
+    <receiver android:name=".SystemReceiver" android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+        <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+        <action android:name="android.intent.action.TIME_SET" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

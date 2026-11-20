@@ -83,7 +83,7 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - New tasks go to the Inbox unless they have a date, project or category. Giving an Inbox task any of those moves it out.
 - On the web the tasks can be open in one browser tab at a time (a limit of the browser storage SQLite uses). A second tab says so and offers to reload. No special server headers are needed.
 
-## Phase 4: sync between devices (code complete; needs a phone check)
+## Phase 4: sync between devices (done; checked on the phone 20 November)
 
 ### What works
 
@@ -114,11 +114,42 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - A restore merges rather than replacing everything, so nothing made after the backup is lost by mistake.
 - The Phase 2 "Check connection" button is gone; the Sync section replaces it.
 
+## Phase 5: reminders and notifications (code complete; needs a phone check)
+
+### What works
+
+- **An alarm runtime in Kotlin** (`modules/taskflow-alarms`), inside the app. Reminders are exact Android alarms that go off with the app closed, offline, in Doze, and after a restart. Only the next alarm is registered with Android at a time; when it goes off, everything due is shown and the next one is registered.
+- **What gets planned.** The app plans every notification for the next 30 days whenever data changes (and when it starts, comes to the front, or runs in the background): each reminder before a due time (or before 09:00 on a day with no time), reminders set for an exact moment from quick add, every time of a repeating task, a **morning plan** (default 08:00: what is due today and anything overdue) and an **evening check** (default 21:00: today's tasks still open; skipped when there are none). At most 500 at a time.
+- **Notification buttons.** Reminders have **Mark completed**, **Snooze 10 min** and **Snooze 30 min**; tapping the notification opens the task. Kotlin handles a button at once (the notification goes, a snooze is armed, later notifications about that task are dropped from the summaries) and queues a completion for the app, which saves it next time it runs, for exactly the day the notification was for. A second tap, or a tap after the task was done elsewhere, changes nothing.
+- **Restarts, app updates, time and time zone changes** re-arm the alarms with no JavaScript involved. Times are wall-clock times, so a 7 PM task reminds at 7 PM in a new time zone. An alarm missed while the phone was off is shown if it is less than six hours late.
+- **Background sync.** About every half hour, when Android allows (often less often while the phone is idle), the app syncs and replans with the app closed, so a reminder added on the computer reaches the phone's alarms without opening the app.
+- **More → Reminders and summaries.** Whether notifications, on-time alarms and battery settings let reminders through, each with a button to fix it; how many notifications are planned and when the next one is; **Send a test reminder in 10 seconds**; the morning and evening times (or Off), kept in the profile so every device uses them. The notification permission is asked for when the first reminder is set.
+- **Two notification channels**, Reminders and Daily summaries, so each can be silenced separately in Android's settings.
+
+### How it was checked
+
+- **The Kotlin runtime compiles into the APK** in GitHub Actions. Its rules (when an alarm goes off in which time zone, daylight-saving gaps, what is due, shown twice, too late, next, and the wording of summaries as tasks are ticked off) are plain Kotlin with 19 tests that run on an ordinary JVM, here and in CI (`bash modules/taskflow-alarms/test-kotlin.sh`). Breaking the six-hour rule on purpose was caught.
+- **Planning** (`src/core/alarms.test.ts`, 11 tests): the brief's example (tomorrow 19:00, 30 minutes before, with project and buttons), Due now and Due tomorrow wording, no-time tasks, midnight and month ends, 30 daily reminders each tied to its own day, a repeat done today, completed and switched-off and passed reminders planning nothing, exact-moment reminders, morning and evening contents, settings, ordering and the 500 cap.
+- **Mark completed from a notification** (5 tests): once only, the right day of a repeat, nothing for a deleted task; summary settings saved in the profile with undo.
+- **Web check, 68 checks**, now including the Reminders page in a browser and the summary times reaching the account's database.
+
+### Not yet proven
+
+- **Everything on the phone.** No alarm has gone off on a real device yet: firing with the app closed, the buttons, restart, time zone change, the permission prompt and the battery screen are all for the phone checklist in [TESTING.md](TESTING.md). The runtime has been compiled, not run.
+- **How often Android runs the background sync** on your phone. Android decides; Nothing OS may hold it back more than stock Android. The phone checklist measures it.
+
+### Decisions in this phase
+
+- **Wake-up push (Firebase) is not built yet.** It would make a reminder added on the computer reach the phone within seconds even when the phone app has not run for a while; today it takes until the next background run (about 30 minutes or more) or until the app is opened. It needs a free Firebase project and three secrets from you, plus a small server function. See Remaining work.
+- Two notification channels instead of the four sketched in Phase 1: deadlines and overdue items are covered by the morning plan, and fewer channels are simpler to manage.
+- A snooze stays on the phone that snoozed it; it is not synced.
+
 ## Remaining work
 
 - [x] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
 - [x] Phase 4: outbox, full push and pull, live updates, conflict handling on devices, export and restore
-- [ ] Phase 5: Kotlin alarm runtime, notification actions, reboot and timezone handling, daily and evening summaries, wake-up push
+- [x] Phase 5: Kotlin alarm runtime, notification actions, reboot and timezone handling, daily and evening summaries, background sync
+- [ ] Wake-up push through Firebase (needs your Firebase project; see Phase 5 decisions)
 - [ ] Phase 6: four home-screen widgets
 - [ ] Phase 7: calendar views, drag to reschedule, Google Calendar, Drive and Tasks
 - [ ] Phase 8: analytics, daily planning, weekly review, goals, habits, focus timer, notes, Eisenhower matrix

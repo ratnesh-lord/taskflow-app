@@ -1,0 +1,7 @@
+{
+  "name": "taskflow-alarms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TaskFlow's Android alarm runtime: exact reminder alarms, notification actions, summaries, reboot and time-zone handling.",
+  "main": "index.ts"
+}

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { dayLabel, type LocalDate } from '@/core/dates';
 import type { ReminderDraft } from '@/core/quick-add';
+import { remindersOnDevice } from '@/platform/reminders';
 import { useTheme } from '@/state/theme';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
@@ -111,7 +112,9 @@ export function ReminderSheet({
       </View>
 
       <Text variant="caption" color="textSecondary">
-        Reminders are saved with the task. Phone alerts for them are not switched on in this version of the app yet.
+        {remindersOnDevice
+          ? 'Reminders arrive as notifications even with the app closed. If one is late or missing, check More, Reminders and summaries.'
+          : 'In a browser, reminders are saved and synced; the TaskFlow app on your phone shows them.'}
       </Text>
     </Sheet>
   );
