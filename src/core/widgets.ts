@@ -21,7 +21,7 @@ export type WidgetRow = {
   /** The day of a repeating task's occurrence; null for a one-off task. */
   occurrenceDate: LocalDate | null;
   title: string;
-  /** What the row shows on the left: "13:00", "Any", or "Fri 20 Nov" for an earlier day. */
+  /** What the row shows on the left: "13:00", "Any", or "20 Nov" for an earlier day. */
   label: string;
   /** "YYYY-MM-DDTHH:MM" for a timed row, "YYYY-MM-DD" for an untimed one. */
   due: string;
@@ -60,6 +60,11 @@ function heading(date: LocalDate): string {
   return `${WEEKDAY_SHORT[weekday(date)]} ${p.day} ${MONTH_SHORT[p.month - 1]}`;
 }
 
+function dayMonth(date: LocalDate): string {
+  const p = parts(date);
+  return `${p.day} ${MONTH_SHORT[p.month - 1]}`;
+}
+
 function rowOf(item: TaskItem, day: LocalDate, hour12: boolean): WidgetRow {
   const date = item.date!;
   const earlier = date < day;
@@ -67,7 +72,7 @@ function rowOf(item: TaskItem, day: LocalDate, hour12: boolean): WidgetRow {
     taskId: item.task.id,
     occurrenceDate: item.occurrence?.date ?? null,
     title: item.task.title,
-    label: earlier ? heading(date) : item.time ? formatTime(item.time, hour12) : 'Any',
+    label: earlier ? dayMonth(date) : item.time ? formatTime(item.time, hour12) : 'Any',
     due: item.time ? `${date}T${item.time}` : date,
     priority: item.task.priority,
     earlier,

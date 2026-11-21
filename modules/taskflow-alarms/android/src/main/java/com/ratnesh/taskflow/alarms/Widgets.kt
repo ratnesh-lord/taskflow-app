@@ -466,16 +466,23 @@ object WidgetRender {
  * A self-check for the emulator test in CI (scripts/ci/android-smoke.sh): draws
  * each widget inside the app, the way a launcher would, and saves pictures of
  * them under the app's files. Only the system or a root shell can send it
- * (the receiver is not exported). Data passed in is drawn but not saved.
+ * (the receiver is not exported). Data (and a next reminder) passed in are
+ * drawn but not saved.
  */
 object WidgetCheck {
   fun run(context: Context, intent: Intent) {
     val raw = intent.getStringExtra("data64")?.let { String(Base64.decode(it, Base64.DEFAULT)) }
     val dir = File(context.filesDir, "widget-check").apply { mkdirs() }
     for (theme in listOf("light", "dark")) {
-      val snap = WidgetSnapshot.load(context, raw, theme)
+      val loaded = WidgetSnapshot.load(context, raw, theme)
+      val nextTitle = intent.getStringExtra("nextTitle")
+      val snap = if (nextTitle == null) loaded else WidgetSnapshot(
+        loaded.state, loaded.theme, loaded.done, NextReminder(nextTitle, null, intent.getLongExtra("nextAt", 0L)),
+        loaded.now, loaded.zone, loaded.hour12,
+      )
       for (kind in WidgetKind.values()) {
-        val (w, h) = WidgetUpdater.sizeOf(null, kind)
+        // Today's tasks a little taller than its smallest size, to show more rows.
+        val (w, h) = if (kind == WidgetKind.TODAY) 320 to 260 else WidgetUpdater.sizeOf(null, kind)
         try {
           val views = WidgetRender.build(context, kind, snap, w, h)
           val parent = FrameLayout(context)

@@ -32,7 +32,7 @@ week="$(python3 -c "w=[3,1,0,4,2,5,2]; d=$dow; print([n if i<=d else 0 for i,n i
 data="$(cat <<JSON
 {"version":1,"generatedAt":1,"signedIn":true,"hour12":false,"days":[
  {"date":"$today","heading":"$(dayname "$today")","pending":4,"overdue":1,"done":2,"important":2,"week":$week,"rows":[
-  {"taskId":"t-late","occurrenceDate":null,"title":"Renew passport","label":"$(dayname "$yesterday")","due":"$yesterday","priority":"high","earlier":true},
+  {"taskId":"t-late","occurrenceDate":null,"title":"Renew passport","label":"$(date -d "$yesterday" "+%-d %b")","due":"$yesterday","priority":"high","earlier":true},
   {"taskId":"t-bill","occurrenceDate":null,"title":"Pay electricity bill","label":"13:00","due":"${today}T13:00","priority":"high","earlier":false},
   {"taskId":"t-report","occurrenceDate":null,"title":"Project report draft","label":"16:30","due":"${today}T16:30","priority":"critical","earlier":false},
   {"taskId":"t-aws","occurrenceDate":"$today","title":"Complete AWS certification revision, chapters 7 to 9","label":"23:30","due":"${today}T23:30","priority":"medium","earlier":false},
@@ -49,7 +49,10 @@ sleep 4
 for kind in today pending productivity next; do
   adb exec-out cat "/data/data/$pkg/files/widget-check/$kind-light.png" > "$out/widgets/$kind-empty.png" 2>/dev/null
 done
-adb shell am broadcast -n "$receiver" -a com.ratnesh.taskflow.widgets.CHECK --es data64 "$b64" >/dev/null
+# With data, and a reminder at 18:30 tomorrow for the Next reminder widget.
+next_at=$(( $(date -d "$tomorrow 18:30" +%s) * 1000 ))
+adb shell am broadcast -n "$receiver" -a com.ratnesh.taskflow.widgets.CHECK --es data64 "$b64" \
+  --es nextTitle "'Complete AWS certification revision'" --el nextAt "$next_at" >/dev/null
 sleep 4
 adb logcat -d -v time > "$out/widgets/logcat.txt"
 grep "Widget check" "$out/widgets/logcat.txt" | cut -c1-200

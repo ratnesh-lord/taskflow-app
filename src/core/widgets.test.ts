@@ -24,7 +24,7 @@ describe('widget data', () => {
     expect(today).toMatchObject({ date: '2026-11-22', heading: 'Sun 22 Nov', pending: 3, overdue: 1, done: 1, important: 2 });
     // Overdue first, then timed in order, then untimed. A time passed today stays in today's list.
     expect(today.rows.map((r) => [r.label, r.title, r.earlier])).toEqual([
-      ['Fri 20 Nov', 'Late', true],
+      ['20 Nov', 'Late', true],
       ['08:00', 'Earlier today', false],
       ['13:00', 'Pay electricity bill', false],
       ['Any', 'Call the bank', false],
@@ -38,7 +38,7 @@ describe('widget data', () => {
     const gym = makeTask({ title: 'Gym', dueDate: '2026-11-23', dueTime: '07:00' });
     const [, tomorrow] = build([bill, gym]).days;
     expect(tomorrow).toMatchObject({ date: '2026-11-23', heading: 'Mon 23 Nov', pending: 1, overdue: 1, done: 0 });
-    expect(tomorrow.rows.map((r) => [r.label, r.title])).toEqual([['Sun 22 Nov', 'Bill'], ['07:00', 'Gym']]);
+    expect(tomorrow.rows.map((r) => [r.label, r.title])).toEqual([['22 Nov', 'Bill'], ['07:00', 'Gym']]);
   });
 
   it('a repeating task shows its current time with that day attached', () => {
