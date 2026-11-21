@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Productivity (2 x 2). The week's bars are drawn into a bitmap (square ends). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/tf_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:orientation="vertical"
+  android:padding="16dp">
+  <TextView android:id="@+id/tf_date" style="@style/TaskflowWidget.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Today" />
+  <TextView android:id="@+id/tf_number" style="@style/TaskflowWidget.Semibold" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:maxLines="1" />
+  <TextView android:id="@+id/tf_line1" style="@style/TaskflowWidget.Regular" android:layout_width="wrap_content" android:layout_height="wrap_content" android:maxLines="1" />
+  <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+  <ImageView android:id="@+id/tf_bars" android:layout_width="match_parent" android:layout_height="28dp" android:scaleType="fitXY" />
+  <TextView android:id="@+id/tf_line2" style="@style/TaskflowWidget.Regular" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:maxLines="1" />
+</LinearLayout>

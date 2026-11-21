@@ -28,9 +28,18 @@ class TaskflowAlarmsModule : Module() {
     }
   }
 
+  /** Refresh was tapped on a widget: the app syncs now. */
+  fun notifyRefresh() {
+    try {
+      sendEvent("onWidgetRefresh", mapOf<String, Any?>())
+    } catch (e: Exception) {
+      // The app is closing.
+    }
+  }
+
   override fun definition() = ModuleDefinition {
     Name("TaskflowAlarms")
-    Events("onAction")
+    Events("onAction", "onWidgetRefresh")
 
     OnCreate {
       current = this@TaskflowAlarmsModule
@@ -42,9 +51,30 @@ class TaskflowAlarmsModule : Module() {
 
     AsyncFunction("setPlan") { json: String -> AlarmRuntime.setPlan(context, json) }
     AsyncFunction("takeActions") { AlarmStore(context).takeActions() }
+    AsyncFunction("snoozes") { AlarmRuntime.snoozes(context) }
     AsyncFunction("status") { AlarmRuntime.status(context) }
     AsyncFunction("test") { seconds: Int -> AlarmRuntime.test(context, seconds).toDouble() }
     Function("openSettings") { kind: String -> AlarmRuntime.openSettings(context, kind) }
+
+    // Home-screen widgets.
+    AsyncFunction("setWidgetData") { json: String ->
+      WidgetStore(context).raw = json
+      WidgetUpdater.refreshAll(context)
+    }
+    AsyncFunction("setWidgetTheme") { theme: String ->
+      WidgetStore(context).theme = theme
+      WidgetUpdater.refreshAll(context)
+    }
+    AsyncFunction("widgets") {
+      mapOf(
+        "pinSupported" to WidgetUpdater.pinSupported(context),
+        "installed" to WidgetKind.values().associate { it.key to WidgetUpdater.ids(context, it).size },
+      )
+    }
+    AsyncFunction("pinWidget") { kind: String ->
+      val k = WidgetKind.of(kind) ?: return@AsyncFunction false
+      WidgetUpdater.pin(context, k)
+    }
 
     AsyncFunction("requestNotificationPermission") { promise: Promise ->
       if (Build.VERSION.SDK_INT < 33) {

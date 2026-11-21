@@ -1,5 +1,6 @@
 # Android smoke test: builds the release app for an x86_64 emulator, starts it
-# on Android 15, and fails if it crashes. The emulator's log (filtered to the
+# on Android 15, and fails if it crashes. Then checks the home-screen widgets
+# (scripts/ci/android-widgets.sh). The emulator's log (filtered to the
 # app) and a screenshot are kept as an artifact named android-smoke.
 #
 # The phone build in ci.yml is ARM-only; this separate build exists only so
@@ -58,7 +59,9 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: bash scripts/ci/android-smoke.sh android/app/build/outputs/apk/release/app-release.apk com.ratnesh.taskflow smoke-out
+          script: |
+            bash scripts/ci/android-smoke.sh android/app/build/outputs/apk/release/app-release.apk com.ratnesh.taskflow smoke-out
+            bash scripts/ci/android-widgets.sh com.ratnesh.taskflow smoke-out
       - uses: actions/upload-artifact@v5
         if: always()
         with:

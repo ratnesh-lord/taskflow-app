@@ -5,7 +5,9 @@ import { Platform } from 'react-native';
 import { parseAuthUrl } from '@/core/auth-url';
 
 import { unregisterDevice } from './device';
+import { forgetAccountOnDevice } from './reminders';
 import { getSupabase } from './supabase';
+import { clearWidgets } from './widgets';
 
 export type AuthOutcome =
   | { ok: true; note?: string; /** Arrived through a password-reset link. */ recovery?: boolean }
@@ -171,4 +173,7 @@ export async function signOut(): Promise<void> {
     // Offline: the server row is replaced the next time anyone signs in here.
   }
   await getSupabase().auth.signOut({ scope: 'local' });
+  // Nothing from the account stays on the home screen or goes off as a reminder.
+  await clearWidgets().catch(() => {});
+  await forgetAccountOnDevice().catch(() => {});
 }

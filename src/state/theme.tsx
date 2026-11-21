@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { useColorScheme } from 'react-native';
 
 import { kv } from '@/platform/kv';
+import { setWidgetTheme } from '@/platform/widgets';
 import { type Colors, palette, type Scheme } from '@/ui/tokens';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
@@ -47,6 +48,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setPreferenceState(next);
     kv.setItem(PREFERENCE_KEY, next).catch(() => {});
   }, []);
+
+  // The home-screen widgets follow the same setting.
+  useEffect(() => {
+    setWidgetTheme(preference);
+  }, [preference]);
 
   const scheme: Scheme = preference === 'system' ? (system === 'dark' ? 'dark' : 'light') : preference;
 

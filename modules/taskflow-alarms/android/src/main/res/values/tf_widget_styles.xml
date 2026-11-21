@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget text. Colours and sizes are set in code from WidgetTokens.kt; Inter needs Android 8 (values-v26). -->
+<resources>
+  <style name="TaskflowWidget.Regular" parent="">
+    <item name="android:includeFontPadding">false</item>
+  </style>
+  <style name="TaskflowWidget.Medium" parent="TaskflowWidget.Regular" />
+  <style name="TaskflowWidget.Semibold" parent="TaskflowWidget.Regular">
+    <item name="android:textStyle">bold</item>
+  </style>
+  <style name="TaskflowWidget.Label" parent="TaskflowWidget.Semibold">
+    <item name="android:textAllCaps">true</item>
+    <item name="android:letterSpacing">0.08</item>
+  </style>
+</resources>

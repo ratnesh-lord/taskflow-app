@@ -16,4 +16,7 @@ android {
 
 dependencies {
   implementation 'com.facebook.react:react-android'
+  // Widget taps start the app's background task (expo-background-task) through WorkManager.
+  implementation project(':expo-background-task')
+  implementation 'androidx.work:work-runtime-ktx:2.10.5'
 }

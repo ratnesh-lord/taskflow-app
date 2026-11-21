@@ -1,5 +1,5 @@
 import type { ReminderRecord } from './agenda';
-import { planAlarms, readSummarySettings, wallClockMinus } from './alarms';
+import { closedSnoozes, planAlarms, readSummarySettings, wallClockMinus } from './alarms';
 import { makeTask } from './fixtures';
 import type { OccurrenceRecord } from './recurrence';
 
@@ -106,5 +106,45 @@ describe('planning notifications', () => {
     expect(list).toHaveLength(500);
     const keys = list.map((a) => a.local ?? '');
     expect([...keys].sort()).toEqual(keys);
+  });
+});
+
+describe('snoozed notifications after the task changes', () => {
+  const snooze = (taskId: string | null, extra: { occurrenceDate?: string; reminderId?: string } = {}) => ({
+    key: `snooze:${taskId}:${extra.occurrenceDate ?? ''}`, taskId, ...extra,
+  });
+  const data = (tasks: ReturnType<typeof makeTask>[], reminders: ReminderRecord[] = [], occurrences: Record<string, OccurrenceRecord[]> = {}) => ({
+    tasks, reminders, occurrences: new Map(Object.entries(occurrences)),
+  });
+
+  it('a snooze for an open task stays; for a completed, archived or deleted task it is cancelled', () => {
+    const open = makeTask({ title: 'Open' });
+    const done = makeTask({ title: 'Done', status: 'completed' });
+    const archived = makeTask({ title: 'Archived', status: 'archived' });
+    const list = [snooze(open.id), snooze(done.id), snooze(archived.id), snooze('deleted-task')];
+    expect(closedSnoozes(data([open, done, archived]), list)).toEqual([list[1].key, list[2].key, list[3].key]);
+  });
+
+  it('the test reminder (no task) always stays', () => {
+    expect(closedSnoozes(data([]), [{ key: 'test:1' }, snooze(null)])).toEqual([]);
+  });
+
+  it('a removed or switched-off reminder cancels its snooze', () => {
+    const t = makeTask({ dueDate: '2026-11-20', dueTime: '18:00' });
+    const on = before(t.id, 30, 'on');
+    const offRem = { ...before(t.id, 10, 'off'), isActive: false };
+    const list = [snooze(t.id, { reminderId: 'on' }), { ...snooze(t.id, { reminderId: 'off' }), key: 'k-off' }, { ...snooze(t.id, { reminderId: 'gone' }), key: 'k-gone' }];
+    expect(closedSnoozes(data([t], [on, offRem]), list)).toEqual(['k-off', 'k-gone']);
+  });
+
+  it('for a repeating task, only the completed or skipped day is cancelled; a moved day stays', () => {
+    const t = makeTask({ dueDate: '2026-11-18', dueTime: '18:00', rrule: 'FREQ=DAILY' });
+    const occ: OccurrenceRecord[] = [
+      { date: '2026-11-18', status: 'completed' },
+      { date: '2026-11-19', status: 'skipped' },
+      { date: '2026-11-20', status: 'skipped', movedToDate: '2026-11-21' },
+    ];
+    const list = ['2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21'].map((d) => snooze(t.id, { occurrenceDate: d }));
+    expect(closedSnoozes(data([t], [], { [t.id]: occ }), list)).toEqual([list[0].key, list[1].key]);
   });
 });

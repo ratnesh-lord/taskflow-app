@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="tf_widget_today_name">Today\'s tasks</string>
+  <string name="tf_widget_today_description">Today\'s open tasks. Tick one off without opening the app.</string>
+  <string name="tf_widget_pending_name">Pending</string>
+  <string name="tf_widget_pending_description">How much is left today, what is overdue and the next deadline.</string>
+  <string name="tf_widget_productivity_name">Productivity</string>
+  <string name="tf_widget_productivity_description">Today\'s progress and tasks completed each day this week.</string>
+  <string name="tf_widget_next_name">Next reminder</string>
+  <string name="tf_widget_next_description">The next reminder and when it goes off.</string>
+</resources>

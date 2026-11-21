@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { signOut } from '@/platform/auth';
+import { widgetsOnDevice } from '@/platform/widgets';
 import { BackupPanel } from '@/components/BackupPanel';
 import { SyncPanel } from '@/components/SyncPanel';
 import { useData } from '@/state/data';
@@ -68,6 +69,7 @@ export default function More() {
         <MenuRow icon="search" label="Search" onPress={() => router.push('/search')} />
         <MenuRow icon="check" label="Completed" onPress={() => router.push('/completed')} />
         <MenuRow icon="bell" label="Reminders and summaries" onPress={() => router.push('/reminders')} />
+        {widgetsOnDevice ? <MenuRow icon="today" label="Home-screen widgets" onPress={() => router.push('/widgets')} /> : null}
         <MenuRow icon="tag" label="Categories" detail={data.categories.length ? String(data.categories.length) : undefined} onPress={() => router.push('/categories')} />
         <Text variant="caption" color="textSecondary" style={{ paddingTop: space.sm }}>
           Your tasks are saved on this device, so they work offline, and synced with your account.
