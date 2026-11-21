@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Productivity (2 x 2). The week's bars are drawn into a bitmap (square ends). -->
+<!-- Productivity (2 x 2). The week's bars are drawn into bitmaps (square ends). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
   android:id="@+id/tf_root"
   android:layout_width="match_parent"
@@ -10,6 +10,11 @@
   <TextView android:id="@+id/tf_number" style="@style/TaskflowWidget.Semibold" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:maxLines="1" />
   <TextView android:id="@+id/tf_line1" style="@style/TaskflowWidget.Regular" android:layout_width="wrap_content" android:layout_height="wrap_content" android:maxLines="1" />
   <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
-  <ImageView android:id="@+id/tf_bars" android:layout_width="match_parent" android:layout_height="28dp" android:scaleType="fitXY" />
+  <!-- Three layers of the same bars, each tinted in code, so they switch with dark mode like the text. -->
+  <FrameLayout android:id="@+id/tf_bars" android:layout_width="match_parent" android:layout_height="28dp">
+    <ImageView android:id="@+id/tf_bars_line" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+    <ImageView android:id="@+id/tf_bars_done" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+    <ImageView android:id="@+id/tf_bars_today" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+  </FrameLayout>
   <TextView android:id="@+id/tf_line2" style="@style/TaskflowWidget.Regular" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:maxLines="1" />
 </LinearLayout>

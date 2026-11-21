@@ -407,7 +407,16 @@ object WidgetRender {
     text(v, c, R.id.tf_number, "${WidgetMath.percent(day)}%", WidgetTokens.NUMBER) { it.text }
     text(v, c, R.id.tf_line1, "${day.done} done · ${day.pending} left", WidgetTokens.CAPTION) { it.textSecondary }
     val todayIndex = snap.today.dayOfWeek.value - 1
-    v.setImageViewBitmap(R.id.tf_bars, bars(context, day.week, todayIndex, widthDp - 32, c.p))
+    for ((id, layer) in listOf(R.id.tf_bars_line to BarLayer.LINE, R.id.tf_bars_done to BarLayer.DONE, R.id.tf_bars_today to BarLayer.TODAY)) {
+      v.setImageViewBitmap(id, bars(context, day.week, todayIndex, widthDp - 32, layer))
+      c.set(v, id, "setColorFilter") {
+        when (layer) {
+          BarLayer.LINE -> it.divider
+          BarLayer.DONE -> it.text
+          BarLayer.TODAY -> it.accent
+        }
+      }
+    }
     val week = day.week.sum()
     v.setContentDescription(R.id.tf_bars, "Tasks completed each day this week, $week so far")
     text(v, c, R.id.tf_line2, if (week == 1) "1 done this week" else "$week done this week", WidgetTokens.CAPTION) { it.textSecondary }
@@ -415,26 +424,36 @@ object WidgetRender {
     return v
   }
 
-  /** Seven square bars, Monday to Sunday: done days in text colour, today in the accent, days to come as a line. */
-  fun bars(context: Context, week: List<Int>, todayIndex: Int, widthDp: Int, p: WidgetPalette): Bitmap {
+  enum class BarLayer { LINE, DONE, TODAY }
+
+  /**
+   * One layer of seven square bars, Monday to Sunday, in white for tinting:
+   * DONE holds earlier days with tasks done, TODAY holds today, LINE holds a
+   * thin line for days with none and days to come.
+   */
+  fun bars(context: Context, week: List<Int>, todayIndex: Int, widthDp: Int, layer: BarLayer): Bitmap {
     val d = context.resources.displayMetrics.density
     val w = max(1, (max(widthDp, 70) * d).toInt())
     val h = max(1, (28 * d).toInt())
     val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bmp)
-    val paint = Paint().apply { isAntiAlias = false }
+    val paint = Paint().apply {
+      isAntiAlias = false
+      color = 0xFFFFFFFF.toInt()
+    }
     val gap = 4 * d
     val bw = (w - gap * 6) / 7
     val most = max(1, week.maxOrNull() ?: 0)
     val line = 2 * d
     for (i in 0 until 7) {
       val n = week.getOrElse(i) { 0 }
-      val bh = if (i > todayIndex || n == 0) line else max(line, h * n.toFloat() / most)
-      paint.color = when {
-        i == todayIndex -> p.accent
-        i > todayIndex || n == 0 -> p.divider
-        else -> p.text
+      val kind = when {
+        i == todayIndex -> BarLayer.TODAY
+        i > todayIndex || n == 0 -> BarLayer.LINE
+        else -> BarLayer.DONE
       }
+      if (kind != layer) continue
+      val bh = if (i > todayIndex || n == 0) line else max(line, h * n.toFloat() / most)
       val x = i * (bw + gap)
       canvas.drawRect(x, h - bh, x + bw, h.toFloat(), paint)
     }
