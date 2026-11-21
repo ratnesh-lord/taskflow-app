@@ -17,6 +17,13 @@ android {
 dependencies {
   implementation 'com.facebook.react:react-android'
   // Widget taps start the app's background task (expo-background-task) through WorkManager.
-  implementation project(':expo-background-task')
+  // Expo links that module either as source or, by default, as a prebuilt package.
+  def backgroundTask = rootProject.findProject(':expo-background-task')
+  if (backgroundTask != null) {
+    implementation backgroundTask
+  } else {
+    def pkg = new groovy.json.JsonSlurper().parse(new File(rootProject.projectDir, '../node_modules/expo-background-task/package.json'))
+    implementation "host.exp.exponent:expo.modules.backgroundtask:${pkg.version}"
+  }
   implementation 'androidx.work:work-runtime-ktx:2.10.5'
 }
