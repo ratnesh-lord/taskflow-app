@@ -5,13 +5,13 @@ Eight layers of automated checks run on every push (GitHub Actions, workflow **C
 | Layer | What it proves | Run it yourself |
 | --- | --- | --- |
 | Database tests | Access rules, merging, paging, purge, concurrency, on a real Postgres with the project's migrations; then the app's sync engine with two devices against those same functions | `npm run test:db` (after `npm ci`) |
-| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, Mark completed from a notification, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
+| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, cancelling snoozes of finished tasks, Mark completed from a notification, what the widgets show, widget colours matching the app's, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
 | Typecheck and lint | Types are sound; no rounded corner anywhere in the code | `npm run typecheck`, `npm run lint` |
 | Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, sign out | `bash scripts/e2e/run.sh` |
 | App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
-| Alarm runtime rules | The Kotlin alarm runtime's time-zone, due, late and summary rules, on an ordinary JVM | `bash modules/taskflow-alarms/test-kotlin.sh` (needs `kotlinc`) |
-| Android build | The app, including the Kotlin alarm runtime, compiles and packages into an installable APK | GitHub Actions only |
-| Android start-up | The release app starts on an Android 15 emulator and survives a restart, a time-zone change and an alarm signal; crash traces are printed in the log | GitHub Actions only (workflow **Android smoke test**) |
+| Alarm and widget rules | The Kotlin alarm runtime's time-zone, due, late and summary rules, and the widgets' day, tick, deadline and next-reminder rules, on an ordinary JVM | `bash modules/taskflow-alarms/test-kotlin.sh` (needs `kotlinc`) |
+| Android build | The app, including the Kotlin alarm runtime and widgets, compiles and packages into an installable APK | GitHub Actions only |
+| Android start-up and widgets | The release app starts on an Android 15 emulator and survives a restart, a time-zone change and an alarm signal; Android lists the four widgets; each draws in light and dark (pictures in the log); a tick on a widget with the app closed is queued and starts the sync; crash traces are printed in the log | GitHub Actions only (workflow **Android smoke test**) |
 
 ## What the database tests cover
 
@@ -37,6 +37,20 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres npm run test:db
 It needs Chrome and `pip install playwright` in addition to the database requirements above. Screenshots are written to `/tmp/taskflow-e2e`.
 
 It does not cover Google sign-in, the real Supabase sign-in service or the real Realtime service; the phone checklist does.
+
+## Phone checklist for Phase 6
+
+Install the newest APK over the old one and open it once (that hands the widgets their first data).
+
+- [ ] **More → Home-screen widgets**: tap **Add to home screen** for each of the four and place them. (Or touch and hold the home screen, tap Widgets, find TaskFlow.) Each shows your tasks, not a message.
+- [ ] The numbers on **Pending** and **Productivity** match the counts at the top of Today in the app.
+- [ ] Make **Today's tasks** taller: more tasks appear.
+- [ ] Close the app completely. Tick a task on **Today's tasks**: it disappears and the counts change. Open the app (or look on the computer a minute later): the task is completed there too.
+- [ ] Tap a task's title on the widget: the app opens that task. Tap **+**: the app opens with quick add.
+- [ ] Add a task with a reminder in the app: **Next reminder** shows it, with its time.
+- [ ] Switch Appearance to Dark in More: the widgets turn dark too.
+- [ ] Tomorrow morning, without opening the app: the widgets show the new date, and yesterday's unfinished tasks as overdue.
+- [ ] **The snooze fix:** let a reminder arrive, tap **Snooze 10 min**, then complete the task in the app (or delete it). Ten minutes later nothing arrives.
 
 ## Phone checklist for Phase 5
 
@@ -100,7 +114,7 @@ Run these on the phone after [setup](SETUP.md). Each line is something no automa
 | # | Scenario | Status |
 | --- | --- | --- |
 | 1 to 3 | Notifications: delivery, app closed, after restart | Planning and the runtime's rules tested now; firing only on the phone (checklist above) |
-| 4, 5 | Complete from the widget; widget changes sync | Phase 6 |
+| 4, 5 | Complete from the widget; widget changes sync | Tested now: the tick's rules (JVM), the tap queued and the sync started with the app closed (emulator), and completing from a queued tap (unit); on the phone in the Phase 6 checklist |
 | 6, 7 | Create offline; sync on reconnect | Tested now: sync engine against the database, and two browsers in the web check; phone checklist below |
 | 8 | Edit the same task on two devices | Tested now: database rules, sync engine with two devices, two browsers; phone checklist below |
 | 9 | Recurring tasks | Repeat rules, completing, skipping and moving one time tested now (unit and web); calendar views in Phase 7 |

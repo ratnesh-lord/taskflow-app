@@ -14,6 +14,7 @@ import {
 } from './dates';
 import { compareItems, itemOf, type ReminderRecord, type Snapshot, type TaskItem, seriesOf } from './agenda';
 import { type Occurrence, projectedOccurrences } from './recurrence';
+import { isOpenStatus } from './types';
 
 export type AlarmItem = { taskId: string; occurrenceDate: LocalDate | null; title: string };
 
@@ -195,6 +196,38 @@ export function planAlarms(data: Snapshot & { reminders: readonly ReminderRecord
 
   const sortKey = (a: PlannedAlarm) => a.local ?? wallClockOfMs(a.at ?? 0);
   return out.sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0)).slice(0, MAX_ALARMS);
+}
+
+export type Snooze = { key: string; taskId?: string | null; occurrenceDate?: string | null; reminderId?: string | null };
+
+/**
+ * Snoozed notifications that should no longer go off: the task was completed,
+ * deleted or archived, that time of a repeating task was completed or
+ * skipped, or the reminder itself was removed or switched off. A snooze with
+ * no task (the test reminder) always stays.
+ */
+export function closedSnoozes(
+  data: Snapshot & { reminders: readonly ReminderRecord[] },
+  snoozes: readonly Snooze[],
+): string[] {
+  const tasks = new Map(data.tasks.map((t) => [t.id, t]));
+  const reminders = new Map(data.reminders.map((r) => [r.id, r]));
+  const closed: string[] = [];
+  for (const s of snoozes) {
+    if (!s.taskId) continue;
+    const task = tasks.get(s.taskId);
+    let open = !!task && isOpenStatus(task.status);
+    if (open && s.reminderId) {
+      const r = reminders.get(s.reminderId);
+      open = !!r && r.isActive && r.taskId === s.taskId;
+    }
+    if (open && s.occurrenceDate && task && seriesOf(task)) {
+      const record = (data.occurrences.get(task.id) ?? []).find((r) => r.date === s.occurrenceDate);
+      if (record && (record.status === 'completed' || (record.status === 'skipped' && !record.movedToDate))) open = false;
+    }
+    if (!open) closed.push(s.key);
+  }
+  return closed;
 }
 
 /** The phone's wall-clock time at an instant, "YYYY-MM-DDTHH:MM". */

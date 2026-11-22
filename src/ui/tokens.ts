@@ -71,3 +71,18 @@ export type TextVariant = keyof typeof typography;
 
 /** Content never grows wider than this on a desktop browser. */
 export const MAX_CONTENT_WIDTH = 720;
+
+/**
+ * Home-screen widgets (Android draws them from Kotlin). Text sizes in sp,
+ * row height in dp. WidgetTokens.kt in modules/taskflow-alarms holds the same
+ * values and the palette above; widget-tokens.test.ts checks they match.
+ */
+export const widget = {
+  label: 11,
+  caption: 12,
+  row: 13,
+  heading: 15,
+  time: 20,
+  number: 40,
+  rowHeight: 44,
+} as const;

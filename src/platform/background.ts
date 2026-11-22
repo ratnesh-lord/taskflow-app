@@ -1,6 +1,7 @@
 /**
  * Work done with the app closed: about every half hour, when Android allows,
- * the app syncs and replans its notifications. So a reminder added on another
+ * the app syncs, replans its notifications and updates the widgets. A tap on
+ * a widget runs this straight away (WidgetSyncWorker in the widget runtime). So a reminder added on another
  * device reaches this phone's alarms without the app being opened.
  *
  * Android decides the timing (at least 15 minutes apart, often longer while

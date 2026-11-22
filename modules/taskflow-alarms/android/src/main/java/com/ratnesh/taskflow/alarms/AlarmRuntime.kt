@@ -59,7 +59,9 @@ object AlarmRuntime {
     store.plan = alarms
     // Taps the app has already taken in are reflected in the new plan.
     store.done = store.done.filterValues { it >= generatedAt }
-    val snoozes = store.snoozes.filter { (AlarmMath.fireTime(it, zone) ?: 0) > now - AlarmMath.GRACE_MS }
+    // Snoozes the app found closed (task completed, deleted, or reminder removed) are cancelled.
+    val closed = root.optJSONArray("closedSnoozes")?.let { arr -> (0 until arr.length()).map { arr.optString(it) }.toSet() } ?: emptySet()
+    val snoozes = store.snoozes.filter { it.key !in closed && (AlarmMath.fireTime(it, zone) ?: 0) > now - AlarmMath.GRACE_MS }
     store.snoozes = snoozes
     val keep = (alarms + snoozes).map { it.key }.toSet()
     val past = alarms.filter { (AlarmMath.fireTime(it, zone) ?: 0) <= now }.map { it.key }
@@ -105,6 +107,12 @@ object AlarmRuntime {
     } else {
       // Without exact-alarm permission Android may deliver it a few minutes late.
       am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi)
+    }
+    // The widgets show the next reminder and hide rows ticked off: redraw them.
+    try {
+      WidgetUpdater.refreshAll(context)
+    } catch (e: Exception) {
+      // A widget problem must never stop reminders.
     }
     return next
   }
@@ -191,6 +199,9 @@ object AlarmRuntime {
     rearm(context, showDue = false)
     TaskflowAlarmsModule.current?.notifyAction()
   }
+
+  /** The snoozes still waiting, so the app can say which no longer apply. */
+  fun snoozes(context: Context): String = PlanJson.alarmsToJson(AlarmStore(context).snoozes).toString()
 
   /** A real alarm through the whole path, [seconds] from now. */
   fun test(context: Context, seconds: Int): Long {

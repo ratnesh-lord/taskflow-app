@@ -20,5 +20,32 @@
         <action android:name="android.intent.action.TIME_SET" />
       </intent-filter>
     </receiver>
+
+    <!-- Home-screen widgets (Widgets.kt). -->
+    <receiver android:name=".TodayWidget" android:exported="true" android:label="@string/tf_widget_today_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/tf_widget_today_info" />
+    </receiver>
+    <receiver android:name=".PendingWidget" android:exported="true" android:label="@string/tf_widget_pending_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/tf_widget_pending_info" />
+    </receiver>
+    <receiver android:name=".ProductivityWidget" android:exported="true" android:label="@string/tf_widget_productivity_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/tf_widget_productivity_info" />
+    </receiver>
+    <receiver android:name=".NextReminderWidget" android:exported="true" android:label="@string/tf_widget_next_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/tf_widget_next_info" />
+    </receiver>
+    <receiver android:name=".WidgetReceiver" android:exported="false" />
   </application>
 </manifest>

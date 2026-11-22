@@ -10,12 +10,13 @@
  * the Android app shows them.
  */
 import { minutesToTime } from '@/core/dates';
-import { planAlarms, readSummarySettings } from '@/core/alarms';
+import { closedSnoozes, planAlarms, readSummarySettings, type Snooze } from '@/core/alarms';
 import type { Actions } from '@/data/actions';
 import type { DataSnapshot } from '@/data/snapshot';
 import { usesHour12 } from '@/ui/format';
 
 import { alarms, type AlarmStatus } from '../../modules/taskflow-alarms';
+import { pushWidgets } from './widgets';
 
 export { type AlarmStatus } from '../../modules/taskflow-alarms';
 
@@ -48,7 +49,10 @@ export async function takeNotificationTaps(actions: Actions): Promise<{ taken: n
 
 let askedThisRun = false;
 
-/** Plan and hand over every notification. Returns how many are planned and when the next one is. */
+/**
+ * Plan and hand over every notification, and the widgets' data.
+ * Returns how many are planned and when the next one is.
+ */
 export async function replan(data: DataSnapshot, takenAt: number): Promise<{ alarms: number; next: number | null } | null> {
   if (!alarms) return null;
   const nowDate = new Date();
@@ -64,7 +68,19 @@ export async function replan(data: DataSnapshot, takenAt: number): Promise<{ ala
     hour12: usesHour12(),
     projectName: (id) => projects.get(id),
   });
-  const result = await alarms.setPlan(JSON.stringify({ version: 1, generatedAt: takenAt, alarms: plan }));
+  // Widget data first: the plan below forgets taps older than [takenAt], and the
+  // widgets hide rows ticked off on them until data reflecting the tap arrives.
+  await pushWidgets(data, takenAt).catch(() => {});
+
+  // A snooze outlives the plan, so one for a task completed or deleted since is cancelled here.
+  let snoozes: Snooze[] = [];
+  try {
+    snoozes = JSON.parse(await alarms.snoozes()) as Snooze[];
+  } catch {
+    snoozes = [];
+  }
+  const closed = closedSnoozes(data, snoozes);
+  const result = await alarms.setPlan(JSON.stringify({ version: 1, generatedAt: takenAt, alarms: plan, closedSnoozes: closed }));
 
   // Android 13 and later ask before showing any notification: ask when the first reminder is set.
   if (!askedThisRun && plan.some((a) => a.kind === 'reminder')) {
@@ -73,6 +89,20 @@ export async function replan(data: DataSnapshot, takenAt: number): Promise<{ ala
     if (!status.notifications) await alarms.requestNotificationPermission().catch(() => null);
   }
   return result;
+}
+
+/** After signing out: no reminders or snoozes from the account go off, and its taps are dropped. */
+export async function forgetAccountOnDevice(): Promise<void> {
+  if (!alarms) return;
+  let snoozes: Snooze[] = [];
+  try {
+    snoozes = JSON.parse(await alarms.snoozes()) as Snooze[];
+  } catch {
+    snoozes = [];
+  }
+  const closed = snoozes.filter((s) => s.taskId).map((s) => s.key);
+  await alarms.setPlan(JSON.stringify({ version: 1, generatedAt: Date.now(), alarms: [], closedSnoozes: closed }));
+  await alarms.takeActions();
 }
 
 export function alarmStatus(): Promise<AlarmStatus> | null {

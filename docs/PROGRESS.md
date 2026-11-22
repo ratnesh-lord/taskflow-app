@@ -114,7 +114,7 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - A restore merges rather than replacing everything, so nothing made after the backup is lost by mistake.
 - The Phase 2 "Check connection" button is gone; the Sync section replaces it.
 
-## Phase 5: reminders and notifications (code complete; needs a phone check)
+## Phase 5: reminders and notifications (done; checked on the phone, one issue fixed in Phase 6)
 
 ### What works
 
@@ -137,9 +137,13 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 
 - **The app stopped at launch ("TaskFlow keeps stopping").** Release builds are shrunk by R8, which removed a constructor that WorkManager (brought in for background sync) calls by reflection, so the app failed before any of its own code ran. Keep rules for it are now added at build time. Found and confirmed with a new check: the release app is started on an Android 15 emulator in GitHub Actions on every pull request, sent the restart, time-zone and alarm signals the runtime listens for, and must still be running afterwards.
 
+### Fixed after the Phase 5 phone test
+
+- **A snoozed reminder still arrived after its task was completed or deleted.** A snooze was kept apart from the plan so that it would survive replanning, and nothing cancelled it. Now, whenever the app replans, it checks each waiting snooze and cancels it when the task was completed, deleted or archived, when that day of a repeating task was completed or skipped, or when the reminder itself was removed or switched off (4 new tests). Ticking the task on a notification or a widget cancels it straight away, with the app closed. One case remains: a task completed on the computer while the phone app has not run since; the snooze is cancelled at the phone's next sync.
+- **Signing out now stops the account's reminders and clears the widgets.** Before, a signed-out phone kept the last plan of reminders. Found while fixing the snooze.
+
 ### Not yet proven
 
-- **Everything on the phone.** No alarm has gone off on a real device yet: firing with the app closed, the buttons, restart, time zone change, the permission prompt and the battery screen are all for the phone checklist in [TESTING.md](TESTING.md). The runtime has been compiled, not run.
 - **How often Android runs the background sync** on your phone. Android decides; Nothing OS may hold it back more than stock Android. The phone checklist measures it.
 
 ### Decisions in this phase
@@ -148,13 +152,49 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - Two notification channels instead of the four sketched in Phase 1: deadlines and overdue items are covered by the morning plan, and fewer channels are simpler to manage.
 - A snooze stays on the phone that snoozed it; it is not synced.
 
+## Phase 6: home-screen widgets (code complete; needs a phone check)
+
+### What works
+
+- **Four widgets**, as in the Phase 1 design, light and dark, square corners, Inter:
+  - **Today's tasks** (4 × 2, can be made taller): the date, how many are left today and how many are overdue, then overdue tasks and today's in the Today screen's order, each with its time (or "Any", or the day it was due) and a priority mark. Tick a box to complete that task; tap a task to open it; **+** opens quick add; the arrows sync now.
+  - **Pending** (2 × 2): tasks left today, then overdue, high priority, and the next deadline.
+  - **Productivity** (2 × 2): today's percentage, done and left, a bar for each day of this week (today in blue), and the week's total.
+  - **Next reminder** (4 × 1): the next reminder's task, time and day. It counts snoozes and skips anything ticked off.
+- **The counts are the Today screen's.** Pending is open today, overdue is open from an earlier day, done is completed today, and the percentage is worked out the same way, so the widgets and the app never disagree.
+- **With the app closed.** The app works out what the widgets show for today and tomorrow whenever its data changes and hands it to Kotlin. The widgets then draw on their own: just after midnight they switch to the next day, after each deadline they move on to the next one, and after each reminder they show the one after. They also redraw every 30 minutes, and whenever the background sync runs.
+- **Ticking a task on the widget** works like Mark completed on a notification. The row disappears and the counts change at once, the task's reminders and snoozes stop, and the tick is saved and synced. With the app open this happens straight away. With the app closed, the tick starts the app's background work, which saves it and syncs it within seconds when the phone is online (or when it next is).
+- **More → Home-screen widgets** describes the four widgets, shows which are on the home screen, and has **Add to home screen** buttons. Android then asks you to confirm and place the widget.
+- **Appearance.** The widgets follow the app's Light, Dark or System setting. On System they switch with the phone's dark mode.
+- **Signed out**, or before the app has run once, the widgets show a short message instead of tasks.
+
+### How it was checked
+
+- **Drawn by Android on an emulator.** The Android smoke test now draws every widget inside the release app, in light and dark, with and without data, the same way a launcher does, and saves pictures of them. The pictures were checked by eye: square corners, Inter, the Today screen's colours, rows lined up, and the overdue row in red. The test also checks that Android lists the four widgets. Finally it ticks a task on a widget with the app closed and checks that the tick was queued for the app and that the background work started (it did, within seconds) with no crash.
+- **The widget rules in Kotlin** (`WidgetMath.kt`, 23 tests on an ordinary JVM): picking today or tomorrow after midnight, rows disappearing and counts moving when ticked (only the right day of a repeat), the percentage, the next deadline, when to redraw, the next reminder (skipping summaries, the test, past and ticked-off reminders, counting snoozes), and 12- and 24-hour times.
+- **What the app sends** (`src/core/widgets.test.ts`, 6 tests): the Today screen's counts, overdue first, repeats, tomorrow as it will look after midnight, the week from Monday to Sunday, 12-hour times, and at most 20 rows.
+- **Colours and sizes** are copied into Kotlin from `src/ui/tokens.ts`, and a test fails if the copy differs.
+- Unit tests 178, web check 68, database tests all pass. The web app is unchanged apart from the Widgets page, which says widgets are part of the Android app.
+
+### Not yet proven
+
+- **On your phone's home screen.** No widget has been placed on a real launcher yet. The emulator check draws them inside the app, not on a home screen. Still to check on the phone: placing and resizing them, ticking a task, how soon the tick reaches the computer with the app closed, and the midnight switch.
+- **Rounded corners from the launcher.** Android 12 and later can round widget corners. TaskFlow's widgets do not ask for it, but some launchers round every widget anyway. If yours does, that is the launcher and cannot be turned off from the app.
+- **Nothing OS** may hold back the background work a tick starts. The tick is never lost: it waits in a queue until the app or the background sync runs.
+
+### Decisions in this phase
+
+- **The Next reminder widget shows the day ("Today", "Tomorrow", "Sat 28 Nov") instead of "in 5 h 50 min".** Widgets cannot redraw every minute without draining the battery, so a countdown would usually be wrong.
+- **Overdue rows show the day they were due ("20 Nov")** in the time column. A fixed-width column keeps the titles lined up.
+- The widgets are drawn by the same Kotlin module as the reminders, so a tick on a widget and Mark completed on a notification share one queue and one done list.
+
 ## Remaining work
 
 - [x] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
 - [x] Phase 4: outbox, full push and pull, live updates, conflict handling on devices, export and restore
 - [x] Phase 5: Kotlin alarm runtime, notification actions, reboot and timezone handling, daily and evening summaries, background sync
 - [ ] Wake-up push through Firebase (needs your Firebase project; see Phase 5 decisions)
-- [ ] Phase 6: four home-screen widgets
+- [x] Phase 6: four home-screen widgets, ticking tasks from the widget, quick add from the widget
 - [ ] Phase 7: calendar views, drag to reschedule, Google Calendar, Drive and Tasks
 - [ ] Phase 8: analytics, daily planning, weekly review, goals, habits, focus timer, notes, Eisenhower matrix
 - [ ] Phase 9: all twelve scenarios on the phone, performance and battery review, desktop layout polish

@@ -11,6 +11,7 @@ import { PROBLEMS_KEY, readProblems, SyncEngine, type SyncProblem } from '@/data
 import { deviceTimezone, getDeviceId } from '@/platform/device';
 import { registerBackgroundWork, setForegroundWorker } from '@/platform/background';
 import { onNotificationTap, remindersOnDevice, replan, takeNotificationTaps } from '@/platform/reminders';
+import { onWidgetRefresh } from '@/platform/widgets';
 import { supabaseTransport, watchAccount } from '@/platform/sync';
 
 import { useSession } from './session';
@@ -74,7 +75,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let loading = false;
     let again = false;
 
-    // Notifications: replanned a second after the data settles; taps on notifications taken in first.
+    // Notifications and widgets: replanned a second after the data settles; taps on notifications
+    // and widgets taken in first.
     let latest: DataSnapshot | null = null;
     let tapsTakenAt = Date.now();
     let planTimer: ReturnType<typeof setTimeout> | null = null;
@@ -165,6 +167,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         });
         cleanups.push(onNotificationTap(() => void takeTaps(actions)));
+        // Refresh on a home-screen widget: sync now (new data redraws the widgets).
+        cleanups.push(onWidgetRefresh(() => {
+          ask('manual');
+          void takeTaps(actions);
+        }));
         cleanups.push(() => appState.remove());
         // In a browser, the connection coming back is announced directly.
         if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {

@@ -79,6 +79,8 @@ function Gate() {
         <Stack.Screen name="search" />
         <Stack.Screen name="categories" />
         <Stack.Screen name="reminders" />
+        <Stack.Screen name="widgets" />
+        <Stack.Screen name="add" />
       </Stack>
       <NoticeBar bottom={onTabs ? TAB_BAR_HEIGHT : 0} right={onTabs ? FAB_SPACE : 0} />
     </QuickAddProvider>
