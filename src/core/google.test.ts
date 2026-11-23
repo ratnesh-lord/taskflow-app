@@ -172,3 +172,13 @@ describe('Google Tasks', () => {
     ]);
   });
 });
+
+describe('pictures in Google Calendar', () => {
+  it("an event's title starts with the task's emoji, after the tick when done", () => {
+    const open = makeTask({ title: 'Birthday', dueDate: '2026-11-24', icon: 'e:🎂' });
+    const done = makeTask({ title: 'Gym', dueDate: '2026-11-22', icon: 'c:dumbbell', status: 'completed', completedAt: '2026-11-22T05:00:00Z' });
+    const events = desiredEvents(data([open, done]), window);
+    expect(events.get(eventId(open.id))!.summary).toBe('🎂 Birthday');
+    expect(events.get(eventId(done.id))!.summary).toBe('✓ 🏋️ Gym');
+  });
+});

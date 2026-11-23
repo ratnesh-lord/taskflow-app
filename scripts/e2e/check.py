@@ -387,6 +387,74 @@ with sync_playwright() as p:
     ok("month and agenda views list the same tasks")
     role(page, "radio", "7 days").first.click()
 
+    # ---- colours and pictures: priority and project colours, emoji, clipart and a photo ------
+    role(page, "button", re.compile(r"^Complete AWS certification revision")).first.click()
+    expect(role(page, "button", "Project: None").first).to_contain_text("None")
+    expect(role(page, "button", "Picture: None").first).to_contain_text("None")
+    role(page, "button", re.compile(r"^Picture: None$")).first.click()
+    role(page, "radio", "Emoji 🎂").first.click()
+    expect(role(page, "button", "Picture: Emoji 🎂").first).to_be_visible()
+    role(page, "button", re.compile(r"^Picture: ")).first.click()
+    role(page, "radio", "Clipart", exact=True).first.click()
+    role(page, "radio", "Clipart: Study").first.click()
+    expect(role(page, "button", "Picture: Clipart: Study").first).to_be_visible()
+    ok("a task takes an emoji, then a clipart drawing instead")
+
+    # A photo: a real JPEG made here, picked through the browser's file chooser, shrunk and uploaded.
+    photo = f"{SHOTS}/photo.jpg"
+    page.evaluate("""() => new Promise((resolve) => {
+      const c = document.createElement('canvas'); c.width = 900; c.height = 600;
+      const g = c.getContext('2d'); g.fillStyle = '#0F766E'; g.fillRect(0, 0, 900, 600); g.fillStyle = '#FBBF24'; g.fillRect(300, 150, 300, 300);
+      c.toBlob((b) => b.arrayBuffer().then((a) => { window.__photo = Array.from(new Uint8Array(a)); resolve(); }), 'image/jpeg', 0.9);
+    })""")
+    with open(photo, "wb") as f:
+        f.write(bytes(page.evaluate("() => window.__photo")))
+    role(page, "button", re.compile(r"^Picture: ")).first.click()
+    role(page, "radio", "Photo", exact=True).first.click()
+    with page.expect_file_chooser() as chooser:
+        button(page, "Choose a photo").click()
+    chooser.value.set_files(photo)
+    expect(role(page, "button", "Picture: Photo").first).to_be_visible(timeout=20000)
+    expect(page.locator("img[src*='/storage/v1/object/sign/attachments/']").filter(visible=True).first).to_be_visible(timeout=15000)
+    ok("a photo is cropped, uploaded to the account's private storage and shown through a signed address")
+    page.screenshot(path=f"{SHOTS}/24-task-picture.png")
+
+    # Colours: by priority (the default), then by project with a chosen project colour.
+    role(page, "button", re.compile(r"^Picture: ")).first.click()
+    role(page, "radio", "Emoji", exact=True).first.click()
+    role(page, "radio", "Emoji 🎓").first.click()
+    button(page, "Back").click()
+    go("More")
+    button(page, "Colours").click()
+    expect(role(page, "radio", "Priority", exact=True).first).to_have_attribute("aria-checked", "true")
+    role(page, "button", "High: Orange").first.click()
+    role(page, "radio", "Violet").first.click()
+    expect(role(page, "button", "High: Violet").first).to_be_visible()
+    assert_square(page, "the Colours page")
+    ok("More → Colours: tasks are coloured by priority, and a priority's colour can be changed (high → violet)")
+    button(page, "Back").click()
+    go("Upcoming")
+    page.screenshot(path=f"{SHOTS}/25-colours-by-priority.png")
+
+    go("More")
+    button(page, "Colours").click()
+    role(page, "radio", "Project", exact=True).first.click()
+    button(page, "Back").click()
+    go("Projects")
+    role(page, "button", re.compile(r"^Cloud exam")).first.click()
+    role(page, "button", "Colour: None").first.click()
+    role(page, "radio", "Teal").first.click()
+    expect(role(page, "button", "Colour: Teal").first).to_be_visible()
+    ok("a project gets its own colour, and tasks can be coloured by project instead")
+    page.screenshot(path=f"{SHOTS}/26-project-colour.png")
+    button(page, "Back").click()
+    go("Upcoming")
+    page.screenshot(path=f"{SHOTS}/27-colours-by-project.png")
+    role(page, "radio", "Calendar", exact=True).first.click()
+    role(page, "radio", "Week", exact=True).first.click()
+    page.screenshot(path=f"{SHOTS}/28-calendar-colours.png")
+    role(page, "radio", "7 days", exact=True).first.click()
+
     page.goto(WEB + "/")  # a full page load: everything below comes from the browser's database
     expect(page.get_by_text(re.compile(r"^Done today · 3$", re.I)).filter(visible=True).first).to_be_visible()
     role(page, "button", re.compile(r"^Done: 3\.")).first.click()
@@ -424,6 +492,11 @@ with sync_playwright() as p:
     assert moved == f"{tomorrow.isoformat()} 17:00:00", moved
     assert db(f"select due_date || ' ' || due_time from public.tasks where title = 'Complete AWS certification revision'") == f"{tomorrow.isoformat()} 19:00:00"
     ok("the calendar drags reached the database: tomorrow's watering moved to 17:00, the AWS task back at 19:00 after Undo")
+    assert db("select icon from public.tasks where title = 'Complete AWS certification revision'") == "e:🎓"
+    colours = json.loads(db(f"select settings -> 'colors' from public.profiles where id = '{user_id}'"))
+    assert colours == {"by": "project", "priority": {"critical": "red", "high": "violet", "medium": "blue", "low": "grey"}}, colours
+    assert db("select color from public.projects where name = 'Cloud exam'") == "teal"
+    ok("the picture, the colour settings and the project colour reached the database")
     stamp = db(f"select field_ts ->> 'title' from public.tasks where user_id = '{user_id}' and title = 'Renew passport'")
     assert re.fullmatch(r"\d{15}:\d{5}:[0-9a-f-]{36}", stamp), stamp
     ok("each field carries a device timestamp in the agreed format")

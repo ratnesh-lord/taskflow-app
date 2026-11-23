@@ -3,20 +3,28 @@ import { useCallback, useMemo, useState } from 'react';
 import { Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { itemOf } from '@/core/agenda';
+import { isColorName, parseIcon } from '@/core/appearance';
+import { CLIPART_BY_KEY } from '@/core/clipart';
 import { dayLabel, type LocalDate, type LocalTime, localDateOf, minutesToTime, shortDate } from '@/core/dates';
 import type { ReminderDraft } from '@/core/quick-add';
 import { alignStart, describeRule, parseRule } from '@/core/recurrence';
 import { PRIORITIES, PRIORITY_LABEL, type Priority, STATUS_LABEL, STATUSES, type TaskStatus } from '@/core/types';
+import { Swatch } from '@/components/ColorSheet';
 import { DateSheet, type DateScope } from '@/components/DateSheet';
 import { OptionSheet } from '@/components/OptionSheet';
+import { PictureSheet } from '@/components/PictureSheet';
 import { ReminderSheet, reminderText } from '@/components/ReminderSheet';
 import { RepeatSheet } from '@/components/RepeatSheet';
 import { TagSheet } from '@/components/TagSheet';
+import { TaskPicture } from '@/components/TaskPicture';
 import { PriorityMark } from '@/components/TaskRow';
 import type { TaskFields } from '@/data/actions';
+import { pickAndUploadPicture } from '@/platform/pictures';
 import { useData, useNotice, useRun } from '@/state/data';
 import { useGoogle } from '@/state/google';
+import { useLook } from '@/state/look';
 import { useNow } from '@/state/now';
+import { useSession } from '@/state/session';
 import { useTheme } from '@/state/theme';
 import { BackHeader } from '@/ui/BackHeader';
 import { Button } from '@/ui/Button';
@@ -29,7 +37,7 @@ import { Screen } from '@/ui/Screen';
 import { Text } from '@/ui/Text';
 import { space, TOUCH, typography } from '@/ui/tokens';
 
-type SheetName = 'due' | 'repeat' | 'reminders' | 'status' | 'priority' | 'project' | 'category' | 'tags' | 'estimate' | null;
+type SheetName = 'due' | 'repeat' | 'reminders' | 'status' | 'priority' | 'project' | 'category' | 'tags' | 'estimate' | 'picture' | null;
 
 const NONE = '__none__';
 const ESTIMATES = [5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
@@ -37,6 +45,15 @@ const ESTIMATES = [5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
 const toLocalTime = (d: Date): LocalTime => minutesToTime(d.getHours() * 60 + d.getMinutes());
 
 /** Every detail of one task, edited in place. Changes save as they are made. */
+/** "Emoji 🎂", "Clipart: Cake", "Photo", or null. */
+function pictureText(value: string | null | undefined): string | null {
+  const icon = parseIcon(value);
+  if (!icon) return null;
+  if (icon.kind === 'emoji') return `Emoji ${icon.emoji}`;
+  if (icon.kind === 'clipart') return `Clipart: ${CLIPART_BY_KEY.get(icon.key)?.label ?? icon.key}`;
+  return 'Photo';
+}
+
 export default function TaskScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, actions } = useData();
@@ -46,6 +63,9 @@ export default function TaskScreen() {
   const google = useGoogle();
   const { notify } = useNotice();
   const [uploading, setUploading] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const { user } = useSession();
+  const look = useLook();
   const router = useRouter();
   const [sheet, setSheet] = useState<SheetName>(null);
   const [subtask, setSubtask] = useState('');
@@ -147,10 +167,29 @@ export default function TaskScreen() {
             {PRIORITY_LABEL[task.priority]}
           </Text>
         </FieldRow>
-        <FieldRow label="Project" value={project?.name} placeholder="None" onPress={() => setSheet('project')} />
+        <FieldRow label="Project" value={project?.name} placeholder="None" onPress={() => setSheet('project')}>
+          {project ? (
+            <>
+              {isColorName(project.color) ? <Swatch name={project.color} size={10} /> : null}
+              <Text variant="smallStrong" style={{ flex: 1 }}>
+                {project.name}
+              </Text>
+            </>
+          ) : undefined}
+        </FieldRow>
         <FieldRow label="Category" value={category?.name} placeholder="None" onPress={() => setSheet('category')} />
         <FieldRow label="Tags" value={tagNames.length ? tagNames.map((t) => `#${t}`).join(' ') : null} placeholder="None" onPress={() => setSheet('tags')} />
-        <FieldRow label="Estimate" value={task.estimatedMinutes ? duration(task.estimatedMinutes) : null} placeholder="None" onPress={() => setSheet('estimate')} last />
+        <FieldRow label="Estimate" value={task.estimatedMinutes ? duration(task.estimatedMinutes) : null} placeholder="None" onPress={() => setSheet('estimate')} />
+        <FieldRow label="Picture" value={pictureText(task.icon)} placeholder="None" onPress={() => setSheet('picture')} last>
+          {task.icon ? (
+            <>
+              <TaskPicture icon={task.icon} size={22} color={look.taskHex(task)} />
+              <Text variant="smallStrong" style={{ flex: 1 }}>
+                {pictureText(task.icon)}
+              </Text>
+            </>
+          ) : undefined}
+        </FieldRow>
       </View>
 
       <View>
@@ -408,6 +447,27 @@ export default function TaskScreen() {
         onPick={(status) => {
           close();
           if (status !== task.status) void run(() => actions.updateTask(id, { status }), `Status: ${STATUS_LABEL[status]}`);
+        }}
+      />
+      <PictureSheet
+        visible={sheet === 'picture'}
+        value={task.icon ?? null}
+        onClose={() => setSheet(null)}
+        photoBusy={photoBusy}
+        onPick={(icon) => {
+          setSheet(null);
+          update({ icon });
+        }}
+        onPhoto={() => {
+          if (!user) return;
+          setPhotoBusy(true);
+          void run(async () => {
+            const path = await pickAndUploadPicture(user.id, id);
+            if (path) {
+              await actions.updateTask(id, { icon: `i:${path}` });
+              setSheet(null);
+            }
+          }).finally(() => setPhotoBusy(false));
         }}
       />
       <OptionSheet<Priority>

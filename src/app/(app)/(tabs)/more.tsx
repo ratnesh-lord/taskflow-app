@@ -70,6 +70,7 @@ export default function More() {
         <MenuRow icon="check" label="Completed" onPress={() => router.push('/completed')} />
         <MenuRow icon="bell" label="Reminders and summaries" onPress={() => router.push('/reminders')} />
         {widgetsOnDevice ? <MenuRow icon="today" label="Home-screen widgets" onPress={() => router.push('/widgets')} /> : null}
+        <MenuRow icon="tag" label="Colours" onPress={() => router.push('/colours')} />
         <MenuRow icon="calendar" label="Google Calendar, Tasks and Drive" onPress={() => router.push('/google')} />
         <MenuRow icon="tag" label="Categories" detail={data.categories.length ? String(data.categories.length) : undefined} onPress={() => router.push('/categories')} />
         <Text variant="caption" color="textSecondary" style={{ paddingTop: space.sm }}>

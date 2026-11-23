@@ -6,11 +6,14 @@ import { dayLabel } from '@/core/dates';
 import { useData, useRun } from '@/state/data';
 import { useNow } from '@/state/now';
 
+import { useLook } from '@/state/look';
+
 import type { RowInfo } from './TaskRow';
 
 /** Project name, tags, subtask counts and reminders for each row, from the snapshot. */
 export function useRowInfo(): (item: TaskItem) => RowInfo {
   const { data } = useData();
+  const look = useLook();
   return useMemo(() => {
     const projects = new Map(data.projects.map((p) => [p.id, p.name]));
     const tags = new Map(data.tags.map((t) => [t.id, t.name]));
@@ -23,9 +26,10 @@ export function useRowInfo(): (item: TaskItem) => RowInfo {
         tagNames: (data.taskTags.get(id) ?? []).map((t) => tags.get(t) ?? '').filter(Boolean),
         subtasks: { done: subs.filter((s) => s.isCompleted).length, total: subs.length },
         hasReminder: reminded.has(id),
+        color: look.taskHex(item.task),
       };
     };
-  }, [data]);
+  }, [data, look]);
 }
 
 /** Complete or reopen from a list, with Undo; open the editor. */

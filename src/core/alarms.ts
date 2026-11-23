@@ -13,6 +13,7 @@ import {
   addDays, compareDates, formatTime, type LocalDate, type LocalTime, minutesToTime, type Now, shortDate, timeToMinutes,
 } from './dates';
 import { compareItems, itemOf, type ReminderRecord, type Snapshot, type TaskItem, seriesOf } from './agenda';
+import { titleWithEmoji } from './appearance';
 import { type Occurrence, projectedOccurrences } from './recurrence';
 import { isOpenStatus } from './types';
 
@@ -123,7 +124,7 @@ export function planAlarms(data: Snapshot & { reminders: readonly ReminderRecord
     const task = item.task;
     const project = task.projectId ? opts.projectName?.(task.projectId) : undefined;
     const withProject = (s: string) => (project ? `${s} · ${project}` : s);
-    const base = { kind: 'reminder' as const, channel: 'reminders' as const, title: task.title, taskId: task.id, reminderId: r.id, actions: true, link: `taskflow://task/${task.id}` };
+    const base = { kind: 'reminder' as const, channel: 'reminders' as const, title: titleWithEmoji(task), taskId: task.id, reminderId: r.id, actions: true, link: `taskflow://task/${task.id}` };
 
     if (r.kind === 'absolute') {
       const at = r.remindAt ? Date.parse(r.remindAt) : NaN;
@@ -150,11 +151,11 @@ export function planAlarms(data: Snapshot & { reminders: readonly ReminderRecord
   if (opts.summaries.morning || opts.summaries.evening) {
     const dueOn = new Map<LocalDate, AlarmItem[]>();
     const firstDate = new Map<string, LocalDate>(); // earliest open date per task, for "overdue by then"
-    const titleOf = new Map(items.map((i) => [i.task.id, i.task.title]));
+    const titleOf = new Map(items.map((i) => [i.task.id, titleWithEmoji(i.task)]));
     for (const i of [...items].sort(compareItems)) {
       for (const o of occurrencesOf.get(i.task.id) ?? []) {
         const list = dueOn.get(o.showDate) ?? [];
-        list.push({ taskId: i.task.id, occurrenceDate: seriesOf(i.task) ? o.date : null, title: i.task.title });
+        list.push({ taskId: i.task.id, occurrenceDate: seriesOf(i.task) ? o.date : null, title: titleWithEmoji(i.task) });
         dueOn.set(o.showDate, list);
         const f = firstDate.get(i.task.id);
         if (!f || o.showDate < f) firstDate.set(i.task.id, o.showDate);

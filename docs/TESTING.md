@@ -5,9 +5,9 @@ Eight layers of automated checks run on every push (GitHub Actions, workflow **C
 | Layer | What it proves | Run it yourself |
 | --- | --- | --- |
 | Database tests | Access rules, merging, paging, purge, concurrency, on a real Postgres with the project's migrations; then the app's sync engine with two devices against those same functions | `npm run test:db` (after `npm ci`) |
-| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, cancelling snoozes of finished tasks, Mark completed from a notification, what the widgets show, widget colours matching the app's, the calendar views and drops, Google Calendar, Tasks and Drive against an in-memory Google, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
+| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, cancelling snoozes of finished tasks, Mark completed from a notification, what the widgets show, widget colours matching the app's, the calendar views and drops, task colours (contrast) and pictures, Google Calendar, Tasks and Drive against an in-memory Google, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
 | Typecheck and lint | Types are sound; no rounded corner anywhere in the code | `npm run typecheck`, `npm run lint` |
-| Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, the calendar views and dragging tasks in them, sign out | `bash scripts/e2e/run.sh` |
+| Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, the calendar views and dragging tasks in them, colours and pictures (including a photo upload), sign out | `bash scripts/e2e/run.sh` |
 | App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
 | Alarm and widget rules | The Kotlin alarm runtime's time-zone, due, late and summary rules, and the widgets' day, tick, deadline and next-reminder rules, on an ordinary JVM | `bash modules/taskflow-alarms/test-kotlin.sh` (needs `kotlinc`) |
 | Android build | The app, including the Kotlin alarm runtime and widgets, compiles and packages into an installable APK | GitHub Actions only |
@@ -37,6 +37,20 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres npm run test:db
 It needs Chrome and `pip install playwright` in addition to the database requirements above. Screenshots are written to `/tmp/taskflow-e2e`.
 
 It does not cover Google sign-in, the real Supabase sign-in service or the real Realtime service; the phone checklist does.
+
+## Phone checklist for colours and pictures
+
+First, merge the pull request and wait for **Apply database migrations** to turn green. Then install the new APK.
+
+- [ ] Lists show a coloured bar on each task, following its priority (high is orange by default).
+- [ ] **More → Colours:** change High to another colour; high-priority tasks change at once, here and on the computer after sync.
+- [ ] Switch **Colour tasks by** to Project. Open a project, set its **Colour**, and its tasks take it.
+- [ ] On a task, **Picture → Emoji →** 🎂. The emoji shows before the title in the list.
+- [ ] **Picture → Clipart →** Gym. The drawing shows, in the task's colour.
+- [ ] **Picture → Photo → Choose a photo.** Android's picker opens; crop, confirm. The photo shows in the list after a moment.
+- [ ] Give a task an emoji and a reminder 2 minutes ahead. The notification's title starts with the emoji.
+- [ ] The Today's tasks widget shows the colour bars and the emoji.
+- [ ] With Google Calendar connected, the event's title starts with the emoji.
 
 ## Phone checklist for Phase 7
 

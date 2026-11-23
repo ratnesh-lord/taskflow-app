@@ -148,3 +148,19 @@ describe('snoozed notifications after the task changes', () => {
     expect(closedSnoozes(data([t], [], { [t.id]: occ }), list)).toEqual([list[0].key, list[1].key]);
   });
 });
+
+describe('emoji in notifications', () => {
+  it("a reminder's title starts with the task's emoji, or its clipart's emoji; a photo adds nothing", () => {
+    const cake = makeTask({ title: "Mum's birthday", dueDate: '2026-11-21', dueTime: '09:00', icon: 'e:🎂' });
+    const gym = makeTask({ title: 'Gym', dueDate: '2026-11-21', dueTime: '07:00', icon: 'c:dumbbell' });
+    const plain = makeTask({ title: 'Passport', dueDate: '2026-11-21', dueTime: '08:00', icon: 'i:4f1c2b8e-1d2e-4a3b-9c4d-5e6f7a8b9c0d/task-pictures/x.jpg' });
+    const titles = plan([cake, gym, plain], [before(cake.id, 0), before(gym.id, 0), before(plain.id, 0)]).map((a) => a.title).sort();
+    expect(titles).toEqual(['Passport', "🎂 Mum's birthday", '🏋️ Gym']);
+  });
+
+  it('the morning plan lists tasks with their emoji', () => {
+    const cake = makeTask({ title: "Mum's birthday", dueDate: '2026-11-21', icon: 'e:🎂' });
+    const morning = plan([cake], [], { summaries: { morning: '08:00', evening: null } }).find((a) => a.kind === 'morning' && a.local?.startsWith('2026-11-21'));
+    expect(morning?.items?.map((i) => i.title)).toEqual(["🎂 Mum's birthday"]);
+  });
+});

@@ -1,8 +1,10 @@
 import { type ComponentRef, useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { titleWithEmoji } from '@/core/appearance';
 import { type CalendarDay, type CalendarEntry, canDrag, inMonth } from '@/core/calendar';
 import { dayLabel, type LocalDate, minutesToTime, type Now, parts } from '@/core/dates';
+import { useLook } from '@/state/look';
 import { useTheme } from '@/state/theme';
 import { shortTime } from '@/ui/format';
 import { Text } from '@/ui/Text';
@@ -31,6 +33,7 @@ export function MonthView({
   onScrollLock: (locked: boolean) => void;
 }) {
   const { colors } = useTheme();
+  const look = useLook();
   const open = useOpenEntry();
   const move = useMoveTask();
   const grid = useRef<ComponentRef<typeof View>>(null);
@@ -133,14 +136,14 @@ export function MonthView({
                 </Text>
                 {wide ? (
                   entries.slice(0, 3).map((e) => (
-                    <Text key={e.key} variant="caption" numberOfLines={1} style={{ color: markColor(e, colors) }}>
+                    <Text key={e.key} variant="caption" numberOfLines={1} style={{ color: markColor(e, colors, e.kind === 'task' ? look.taskHex(e.item.task) : null) }}>
                       {entryTitle(e)}
                     </Text>
                   ))
                 ) : (
                   <View style={styles.marks}>
                     {entries.slice(0, 4).map((e) => (
-                      <View key={e.key} style={[styles.mark, { backgroundColor: markColor(e, colors) }]} />
+                      <View key={e.key} style={[styles.mark, { backgroundColor: markColor(e, colors, e.kind === 'task' ? look.taskHex(e.item.task) : null) }]} />
                     ))}
                   </View>
                 )}
@@ -184,10 +187,10 @@ export function MonthView({
   );
 }
 
-function markColor(e: CalendarEntry, colors: { accent: string; overdue: string; textSecondary: string; divider: string }): string {
+function markColor(e: CalendarEntry, colors: { accent: string; overdue: string; textSecondary: string; divider: string }, own: string | null): string {
   if (e.kind === 'event') return colors.textSecondary;
   if (e.done) return colors.divider;
-  return e.item.overdue ? colors.overdue : colors.accent;
+  return own ?? (e.item.overdue ? colors.overdue : colors.accent);
 }
 
 /**
@@ -196,6 +199,8 @@ function markColor(e: CalendarEntry, colors: { accent: string; overdue: string; 
  */
 export function EntryRow({ entry, dragging, onPress, inDrag }: { entry: CalendarEntry; dragging?: boolean; onPress: () => void; inDrag?: boolean }) {
   const { colors } = useTheme();
+  const look = useLook();
+  const own = entry.kind === 'task' ? look.taskHex(entry.item.task) : null;
   const done = entry.kind === 'task' && entry.done;
   const overdue = entry.kind === 'task' && entry.item.overdue;
   const time = entry.start != null ? shortTime(minutesToTime(entry.start)) : entry.kind === 'event' ? 'All day' : 'Any time';
@@ -205,10 +210,10 @@ export function EntryRow({ entry, dragging, onPress, inDrag }: { entry: Calendar
       <Text variant="caption" numberOfLines={1} style={[styles.entryTime, { color: overdue ? colors.overdue : colors.textSecondary }]}>
         {time}
       </Text>
-      <View style={[styles.swatch, entry.kind === 'event' ? { borderWidth: 1, borderColor: colors.textSecondary } : { backgroundColor: done ? colors.divider : overdue ? colors.overdue : colors.accent }]} />
+      <View style={[styles.swatch, entry.kind === 'event' ? { borderWidth: 1, borderColor: colors.textSecondary } : { backgroundColor: done ? colors.divider : own ?? (overdue ? colors.overdue : colors.accent) }]} />
       <View style={{ flex: 1 }}>
         <Text variant="body" numberOfLines={2} style={done ? { color: colors.textSecondary, textDecorationLine: 'line-through' } : undefined}>
-          {entryTitle(entry)}
+          {entry.kind === 'task' ? titleWithEmoji(entry.item.task) : entryTitle(entry)}
         </Text>
         {entry.kind === 'event' ? (
           <Text variant="caption" color="textSecondary" numberOfLines={1}>

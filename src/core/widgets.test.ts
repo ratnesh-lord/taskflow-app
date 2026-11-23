@@ -76,3 +76,12 @@ describe('widget data', () => {
     expect(today).toMatchObject({ rows: [], pending: 0, overdue: 0, done: 0, important: 0, week: [0, 0, 0, 0, 0, 0, 0] });
   });
 });
+
+describe('widget rows and pictures', () => {
+  it("a row's title starts with the task's emoji or clipart emoji", () => {
+    const t = makeTask({ title: 'Pay bill', dueDate: '2026-11-22', icon: 'e:🧾' });
+    const g = makeTask({ title: 'Gym', dueDate: '2026-11-22', icon: 'c:dumbbell' });
+    const [today] = build([t, g]).days;
+    expect(today.rows.map((r) => r.title).sort()).toEqual(['🏋️ Gym', '🧾 Pay bill']);
+  });
+});

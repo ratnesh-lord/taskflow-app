@@ -70,6 +70,7 @@ export function toTask(r: Row): TaskRecord {
     completedAt: strOrNull(r.completed_at),
     rrule: strOrNull(r.rrule),
     recurUntil: strOrNull(r.recur_until),
+    icon: strOrNull(r.icon),
     sortOrder: num(r.sort_order),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),

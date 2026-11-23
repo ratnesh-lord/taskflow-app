@@ -6,6 +6,7 @@ import { occurrenceId } from '@/core/ids';
 import { parseQuickAdd } from '@/core/quick-add';
 
 import { Actions, InvalidInput } from './actions';
+import { LOCAL_MIGRATIONS } from './schema';
 import { type DataSnapshot, loadSnapshot } from './snapshot';
 import { Store } from './store';
 import { openNodeDb } from './testing/node-db';
@@ -340,5 +341,49 @@ describe('summary settings', () => {
   it('wait for the profile to arrive from the account', async () => {
     const { actions } = await setup();
     await expect(actions.setSummaries(USER, { morning: '08:00', evening: '21:00' })).rejects.toThrow('has not arrived');
+  });
+});
+
+describe('colours and pictures', () => {
+  it('a task takes an emoji, a clipart or a photo, and loses it again; nonsense is refused', async () => {
+    const { actions, snap } = await setup();
+    const { id } = await actions.createTask({ title: 'Birthday', icon: 'e:🎂' });
+    expect(taskIn(await snap(), id).icon).toBe('e:🎂');
+    await actions.updateTask(id, { icon: 'c:gift' });
+    expect(taskIn(await snap(), id).icon).toBe('c:gift');
+    await expect(actions.updateTask(id, { icon: 'e:cake' })).rejects.toThrow('That picture cannot be used');
+    await expect(actions.updateTask(id, { icon: 'i:someone-else/x.jpg' })).rejects.toThrow('That picture cannot be used');
+    await actions.updateTask(id, { icon: null });
+    expect(taskIn(await snap(), id).icon).toBeNull();
+  });
+
+  it('a project keeps its colour', async () => {
+    const { actions, snap } = await setup();
+    const { id } = await actions.createProject({ name: 'Home', color: 'teal' });
+    await actions.updateProject(id, { color: 'violet' });
+    expect((await snap()).projects.find((p) => p.id === id)!.color).toBe('violet');
+  });
+});
+
+describe('upgrading the device database', () => {
+  it('a database from before pictures gains the column and keeps its tasks', async () => {
+    const db = openNodeDb();
+    await db.exec(LOCAL_MIGRATIONS[0]);
+    await db.exec('PRAGMA user_version = 1');
+    await db.run(
+      "INSERT INTO tasks (id, user_id, created_at, updated_at, title) VALUES ('t1', 'u1', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z', 'Old task')",
+    );
+    await Store.open(db, { userId: USER, deviceId: DEVICE });
+    const [row] = await db.all<{ title: string; icon: string | null }>("SELECT title, icon FROM tasks WHERE id = 't1'");
+    expect(row).toEqual({ title: 'Old task', icon: null });
+    const [{ user_version }] = await db.all<{ user_version: number }>('PRAGMA user_version');
+    expect(user_version).toBe(LOCAL_MIGRATIONS.length);
+  });
+
+  it('a new database ends up with the same columns as an upgraded one', async () => {
+    const fresh = openNodeDb();
+    await Store.open(fresh, { userId: USER, deviceId: DEVICE });
+    const cols = (await fresh.all<{ name: string }>('PRAGMA table_info(tasks)')).map((c) => c.name);
+    expect(cols.filter((c) => c === 'icon')).toEqual(['icon']);
   });
 });

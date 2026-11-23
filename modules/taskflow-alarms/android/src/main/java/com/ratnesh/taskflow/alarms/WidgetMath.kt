@@ -25,9 +25,14 @@ data class WidgetRow(
   val due: String,
   val priority: String,
   val earlier: Boolean,
+  /** The row's colour bar and priority mark, as #RRGGBB for light and dark; null for none (older app data). */
+  val color: ColorPair? = null,
+  val priorityColor: ColorPair? = null,
 ) {
   val doneKey: String get() = AlarmMath.doneKey(taskId, occurrenceDate)
 }
+
+data class ColorPair(val light: String, val dark: String)
 
 data class WidgetDay(
   val date: String,

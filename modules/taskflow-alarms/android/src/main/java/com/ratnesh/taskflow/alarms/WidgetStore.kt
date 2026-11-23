@@ -53,6 +53,14 @@ class WidgetStore(context: Context) {
       )
     }
 
+    private val HEX = Regex("^#[0-9A-Fa-f]{6}$")
+
+    private fun parsePair(o: JSONObject): ColorPair? {
+      val light = o.optString("light")
+      val dark = o.optString("dark")
+      return if (HEX.matches(light) && HEX.matches(dark)) ColorPair(light, dark) else null
+    }
+
     private fun JSONObject.str(name: String): String? = if (has(name) && !isNull(name)) optString(name) else null
 
     private fun parseDay(o: JSONObject): WidgetDay {
@@ -71,6 +79,8 @@ class WidgetStore(context: Context) {
               due = r.optString("due"),
               priority = r.optString("priority", "medium"),
               earlier = r.optBoolean("earlier", false),
+              color = r.optJSONObject("color")?.let(::parsePair),
+              priorityColor = r.optJSONObject("priorityColor")?.let(::parsePair),
             )
           }
         },

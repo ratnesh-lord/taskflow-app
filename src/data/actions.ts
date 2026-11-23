@@ -5,6 +5,7 @@
 import { seriesOf } from '@/core/agenda';
 import type { SummarySettings } from '@/core/alarms';
 import { type LocalDate, type LocalTime, localDateOf, toMoment } from '@/core/dates';
+import { type ColorSettings, parseIcon, readColorSettings } from '@/core/appearance';
 import { readGoogleSettings, type GoogleSettings } from '@/core/google';
 import { externalLinkId, normaliseTagName, occurrenceId, tagId, taskTagId } from '@/core/ids';
 import type { QuickAdd, ReminderDraft } from '@/core/quick-add';
@@ -32,6 +33,8 @@ export type TaskFields = {
   estimatedMinutes: number | null;
   rrule: string | null;
   recurUntil: LocalDate | null;
+  /** The task's picture (src/core/appearance.ts), or null for none. */
+  icon: string | null;
 };
 
 export type TaskInput = Partial<TaskFields> & {
@@ -57,6 +60,7 @@ const FIELD_COLUMNS: Record<keyof TaskFields, string> = {
   estimatedMinutes: 'estimated_minutes',
   rrule: 'rrule',
   recurUntil: 'recur_until',
+  icon: 'icon',
 };
 
 /** Children that go with a task when it is deleted or duplicated. */
@@ -77,6 +81,7 @@ function toColumns(fields: Partial<TaskFields>): Record<string, unknown> {
     if (!out.title) throw new InvalidInput('A task needs a title.');
     if ((out.title as string).length > 500) throw new InvalidInput('A title can be at most 500 characters.');
   }
+  if (out.icon != null && !parseIcon(String(out.icon))) throw new InvalidInput('That picture cannot be used: choose an emoji, a clipart or a photo.');
   return out;
 }
 
@@ -487,6 +492,18 @@ export class Actions {
       await tx.write('profiles', userId, { settings: { ...settings, notifications: { morning: summaries.morning, evening: summaries.evening } } });
     });
     return undo;
+  }
+
+  /** How tasks are coloured, kept in the profile so every device shows the same colours. */
+  async setColorSettings(userId: string, patch: Partial<ColorSettings>): Promise<void> {
+    await this.store.transaction(async (tx) => {
+      const profile = await tx.get('profiles', userId);
+      if (!profile) throw new InvalidInput('Your profile has not arrived from your account yet. Sync, then try again.');
+      const settings = (profile.settings && typeof profile.settings === 'object' ? profile.settings : {}) as Record<string, unknown>;
+      const current = readColorSettings(settings);
+      const colors = { by: patch.by ?? current.by, priority: { ...current.priority, ...patch.priority } };
+      await tx.write('profiles', userId, { settings: { ...settings, colors } });
+    });
   }
 
   /** Google integration settings, kept in the profile so every device uses the same calendar, list and folder. */

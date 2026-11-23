@@ -7,9 +7,11 @@
  * In a browser there are no widgets: every function here does nothing.
  */
 import { localDateOf, nowFrom } from '@/core/dates';
-import { widgetData } from '@/core/widgets';
+import { type ColorName, readColorSettings, taskColor } from '@/core/appearance';
+import { type WidgetData, widgetData } from '@/core/widgets';
 import type { DataSnapshot } from '@/data/snapshot';
 import { usesHour12 } from '@/ui/format';
+import { taskColors } from '@/ui/tokens';
 
 import { alarms, type WidgetKind, type WidgetStatus } from '../../modules/taskflow-alarms';
 
@@ -24,7 +26,28 @@ export async function pushWidgets(data: DataSnapshot, takenAt: number): Promise<
   if (!alarms) return;
   const moment = new Date();
   const payload = widgetData(data, { now: nowFrom(moment), nowMs: takenAt, toLocal, hour12: usesHour12() });
-  await alarms.setWidgetData(JSON.stringify(payload));
+  await alarms.setWidgetData(JSON.stringify(withColors(payload, data)));
+}
+
+/**
+ * Adds each row's colours, for light and dark: its colour bar (priority or
+ * project, as set) and its priority mark. The widgets cannot read tokens.ts.
+ */
+export function withColors(payload: WidgetData, data: DataSnapshot): WidgetData {
+  const settings = readColorSettings(data.profile?.settings);
+  const projects = new Map(data.projects.map((p) => [p.id, p.color]));
+  const tasks = new Map(data.tasks.map((t) => [t.id, t]));
+  const pair = (name: ColorName | null) => (name ? { light: taskColors[name].light, dark: taskColors[name].dark } : null);
+  return {
+    ...payload,
+    days: payload.days.map((d) => ({
+      ...d,
+      rows: d.rows.map((r) => {
+        const task = tasks.get(r.taskId);
+        return { ...r, color: task ? pair(taskColor(task, projects, settings)) : null, priorityColor: pair(settings.priority[r.priority]) };
+      }),
+    })),
+  };
 }
 
 /** After signing out the widgets show nothing from the account. */
