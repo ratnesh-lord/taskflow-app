@@ -255,11 +255,71 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - **No calendar link rows for events.** Each update compares the calendar itself with what it should hold, which also cleans up after a device that went offline mid-update. The `calendar_links` table holds the Google Tasks links instead, so a second import or copy updates rather than duplicates.
 - **The APK is still signed with the standard development key**, so the Android client uses that key's public fingerprint. Phase 10's release key needs its own Android client.
 
+## Added after Phase 7: colour-coded tasks and task pictures (code complete; needs a phone check)
+
+### What works
+
+- **Colours.**
+  - Each priority has a colour. The defaults are critical red, high orange, medium blue and low grey.
+  - Each project can have a colour, chosen on its page; it also shows in the Projects list.
+  - **More → Colours** sets what a task's colour follows (its priority, its project, or nothing) and lets you change each priority's colour.
+  - A task shows its colour as a bar on the left of its row, as its block colour in the calendar, as its mark in the month view, and as a bar in the Today's tasks widget.
+  - The priority square next to each task now uses the priority's colour. It is filled for critical and high, outlined for medium and low, so the difference does not depend on colour alone.
+  - There are 11 colours to choose from. Each is checked to be readable with white text (light mode) or dark text (dark mode), and to stand out from the page.
+  - The settings are saved to your account, so every device shows the same colours.
+- **Pictures** (optional, one per task). On the task screen, **Picture** offers:
+  - **Emoji:** 56 suggestions, or type any emoji.
+  - **Clipart:** 49 simple drawings, such as Home, Work, Gym, Medicine, Bill, Study, Birthday and Travel. They are drawn in the task's colour. The drawings come from Lucide (ISC licence).
+  - **Photo:** a photo from the device, cropped square and shrunk to 512 pixels. It is stored in your private Supabase Storage folder, which only your account can read, and shown through short-lived signed links.
+
+  The picture shows before the title in lists and on the task screen.
+- **The emoji goes where the title goes.** The emoji (or a clipart's own emoji, e.g. 🏋️ for Gym) starts the title in:
+  - reminder notifications;
+  - morning and evening summaries;
+  - the Today's tasks widget;
+  - the calendar views;
+  - Google Calendar events.
+
+  A photo has no emoji, so these show the plain title.
+
+### How it was checked
+
+- **Rules** (`src/core/appearance.test.ts`, 8 tests): default and chosen colours, priority versus project colouring, recognising emoji (including sequences, flags, keycaps and skin tones) and rejecting words, reading and writing the three kinds of picture, refusing malformed or foreign photo paths, and every clipart having a name, an emoji and a drawing.
+- **Colours** (`src/ui/task-colors.test.ts`, 12 tests): every colour has 4.5:1 contrast with its text and 3:1 with the page, in light and dark.
+- **Emoji in titles** (4 new tests): reminders, summaries, widget rows and Google events start with the emoji; a photo adds nothing. **Widget colours** (2 tests): each row carries its bar and priority colours for light and dark.
+- **Device database** (4 new tests):
+  - a task takes, changes and loses its picture, and nonsense is refused;
+  - a project keeps its colour;
+  - a database from before this change gains the new column and keeps its tasks;
+  - a new install ends up with the same columns as an upgraded one.
+
+  The database tests also pass with the new migration.
+- **In Chrome** (84 checks, 6 new):
+  - choosing an emoji, then a clipart, then a real JPEG through the file chooser, which is uploaded and shown through a signed link;
+  - changing the high-priority colour, switching to colour by project, and giving a project a colour;
+  - the database holding all of it.
+
+  Screenshots were checked by eye.
+- **Android:** the APK build and emulator check are in CI. The widget check draws rows with colour bars and emoji.
+
+### Not yet proven
+
+- **On the phone:**
+  - The photo picker and the cropping screen (Android's own).
+  - How emoji look in notifications and widgets (Android draws them in its own emoji style).
+- **Photos need a connection to add.** Without one, TaskFlow says so and nothing changes. A photo already added shows a grey square while offline, until its link loads.
+- **Replaced photos stay in storage.** They are kept so Undo and other devices still work; at about 50 KB each this costs little. A clean-up is in Remaining work.
+
+### Before installing
+
+This change adds a column to the database (migration 6). Merging the pull request runs **Apply database migrations** automatically. Wait for it to turn green before installing the new APK. Otherwise the phone's edits wait, unsent, with a sync problem shown, until it does.
+
 ## Remaining work
 
 - [x] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
 - [x] Phase 4: outbox, full push and pull, live updates, conflict handling on devices, export and restore
 - [x] Phase 5: Kotlin alarm runtime, notification actions, reboot and timezone handling, daily and evening summaries, background sync
+- [ ] Remove replaced task photos from storage (kept for now so Undo works)
 - [ ] Wake-up push through Firebase (needs your Firebase project; see Phase 5 decisions)
 - [x] Phase 6: four home-screen widgets, ticking tasks from the widget, quick add from the widget
 - [x] Phase 7: calendar views, drag to reschedule, Google Calendar, Drive and Tasks
