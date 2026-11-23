@@ -312,6 +312,81 @@ with sync_playwright() as p:
     expect(page.get_by_text("100%", exact=True).filter(visible=True).first).to_be_visible()
     ok("completing it moves the project to 100%")
 
+    # ---- calendar (Phase 7): day, week, month and agenda views; drag to reschedule ----------
+    tomorrow = today + timedelta(days=1)
+
+    def drag(source, dx=0, dy=0, to=None):
+        """Touch and hold (here: press the mouse) for 0.6 s, then move and let go."""
+        source.scroll_into_view_if_needed()
+        box = source.bounding_box()
+        x, y = box["x"] + box["width"] / 2, box["y"] + min(10, box["height"] / 2)
+        tx, ty = (to if to else (x + dx, y + dy))
+        page.mouse.move(x, y)
+        page.mouse.down()
+        page.wait_for_timeout(600)
+        page.mouse.move(x + (tx - x) / 3, y + (ty - y) / 3, steps=5)
+        page.mouse.move(tx, ty, steps=10)
+        page.wait_for_timeout(150)
+        page.mouse.up()
+
+    button(page, "Back").click()
+    go("Upcoming")
+    role(page, "radio", "Calendar", exact=True).first.click()
+    expect(role(page, "radio", "Day", exact=True).first).to_have_attribute("aria-checked", "true")
+    expect(page.get_by_text(re.compile(r"^All day$")).filter(visible=True).first).to_be_visible()
+    plants_today = role(page, "button", re.compile(r"^Water the plants.*completed$")).filter(visible=True)
+    expect(plants_today.first).to_be_visible()
+    ok("Upcoming → Calendar opens today's hour grid, with today's ticked-off repeat marked done")
+    button(page, "Later").click()
+    aws_block = role(page, "button", re.compile(r"^Complete AWS certification revision, 19:00$")).filter(visible=True)
+    expect(aws_block.first).to_be_visible()
+    expect(role(page, "button", re.compile(r"^Water the plants$")).filter(visible=True).first).to_be_visible()
+    ok("tomorrow shows the AWS task at 19:00 on the grid and the daily repeat in the all-day row")
+    assert_square(page, "the day view")
+    page.screenshot(path=f"{SHOTS}/20-calendar-day.png")
+
+    drag(aws_block.first, dy=-3 * 48)
+    notice("Moved to ")
+    expect(role(page, "button", re.compile(r"^Complete AWS certification revision, 16:00$")).filter(visible=True).first).to_be_visible()
+    ok("dragging the task up three hours moves it to 16:00 (snapped to the quarter hour)")
+    page.get_by_role("alert").get_by_role("button", name="Undo").click()
+    expect(aws_block.first).to_be_visible()
+    ok("Undo puts it back at 19:00")
+
+    plants_tomorrow = role(page, "button", re.compile(r"^Water the plants$")).filter(visible=True).first
+    aws_now = role(page, "button", re.compile(r"^Complete AWS certification revision, 19:00$")).filter(visible=True).first
+    aws_now.scroll_into_view_if_needed()
+    page.wait_for_timeout(400)
+    line_17 = aws_now.bounding_box()["y"] - 1 - 2 * 48  # the block's top is the 19:00 line plus 1
+    # An all-day item is held near its top edge, so the pointer goes just under the 17:00 line.
+    drag(plants_tomorrow, to=(206, line_17 + 6))
+    notice("Moved to ")
+    expect(role(page, "button", re.compile(r"^Water the plants, 17:00$")).filter(visible=True).first).to_be_visible()
+    ok("dragging the daily repeat from the all-day row onto the grid gives that one day a time (17:00)")
+
+    role(page, "radio", "Week", exact=True).first.click()
+    expect(role(page, "button", re.compile(r"^Complete AWS certification revision, 19:00$")).filter(visible=True).first).to_be_visible()
+    week_plants = role(page, "button", re.compile(r"^Water the plants$")).filter(visible=True)
+    expect(week_plants.first).to_be_visible()
+    page.screenshot(path=f"{SHOTS}/21-calendar-week.png")
+    aws_week = role(page, "button", re.compile(r"^Complete AWS certification revision, 19:00$")).filter(visible=True).first
+    column = (412 - 2 * 20 - 44) / 7
+    days_right = 1 if tomorrow.weekday() < 6 else -1
+    drag(aws_week, dx=days_right * column)
+    moved_to = tomorrow + timedelta(days=days_right)
+    notice(f"Moved to {moved_to.strftime('%a')} {moved_to.day} {moved_to.strftime('%b')}, 19:00")
+    expect(role(page, "button", re.compile(r"^Complete AWS certification revision, 19:00$")).filter(visible=True)).to_have_count(1)
+    ok(f"in the week view, dragging sideways moves the task to the next day's column ({moved_to.isoformat()})")
+    page.get_by_role("alert").get_by_role("button", name="Undo").click()
+
+    role(page, "radio", "Month", exact=True).first.click()
+    page.screenshot(path=f"{SHOTS}/22-calendar-month.png")
+    role(page, "radio", "Agenda", exact=True).first.click()
+    expect(role(page, "button", re.compile(r"^Complete AWS certification revision, 19:00")).filter(visible=True).first).to_be_visible()
+    page.screenshot(path=f"{SHOTS}/23-calendar-agenda.png")
+    ok("month and agenda views list the same tasks")
+    role(page, "radio", "7 days").first.click()
+
     page.goto(WEB + "/")  # a full page load: everything below comes from the browser's database
     expect(page.get_by_text(re.compile(r"^Done today · 3$", re.I)).filter(visible=True).first).to_be_visible()
     role(page, "button", re.compile(r"^Done: 3\.")).first.click()
@@ -344,6 +419,11 @@ with sync_playwright() as p:
     assert db(f"select count(*) from public.task_occurrences where user_id = '{user_id}' and status = 'completed'") == "1"
     assert db(f"select count(*) from public.saved_filters where user_id = '{user_id}' and name = 'Important'") == "1"
     ok("every task, repeat completion and saved filter made in this browser is in the database")
+    moved = db(f"select o.moved_to_date || ' ' || o.moved_to_time from public.task_occurrences o join public.tasks t on t.id = o.task_id "
+               f"where t.title = 'Water the plants' and o.status = 'skipped' and o.occurrence_date = '{tomorrow.isoformat()}'")
+    assert moved == f"{tomorrow.isoformat()} 17:00:00", moved
+    assert db(f"select due_date || ' ' || due_time from public.tasks where title = 'Complete AWS certification revision'") == f"{tomorrow.isoformat()} 19:00:00"
+    ok("the calendar drags reached the database: tomorrow's watering moved to 17:00, the AWS task back at 19:00 after Undo")
     stamp = db(f"select field_ts ->> 'title' from public.tasks where user_id = '{user_id}' and title = 'Renew passport'")
     assert re.fullmatch(r"\d{15}:\d{5}:[0-9a-f-]{36}", stamp), stamp
     ok("each field carries a device timestamp in the agreed format")
@@ -427,6 +507,13 @@ with sync_playwright() as p:
     assert json.loads(settings) == {"morning": "07:30", "evening": None}, settings
     ok("summary times are saved to the account, so every device uses them")
     assert_square(page, "the Reminders page")
+    button(page, "Back").click()
+
+    # ---- Google (Phase 7): this build has no web client id, so the page says so ---------------
+    button(page, "Google Calendar, Tasks and Drive").click()
+    expect(page.get_by_role("heading", name="Google", exact=True).filter(visible=True)).to_be_visible()
+    expect(page.get_by_text(re.compile(r"^Google is not set up for the web version of this build")).filter(visible=True)).to_be_visible()
+    ok("without a Google client id the Google page explains it is not set up, instead of offering buttons that fail")
     button(page, "Back").click()
 
     # ---- export and restore -----------------------------------------------------------------

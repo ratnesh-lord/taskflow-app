@@ -86,3 +86,12 @@ export const widget = {
   number: 40,
   rowHeight: 44,
 } as const;
+
+/** The calendar's hour grid (dp): an hour's height, the time column, an all-day item. */
+export const calendarGrid = {
+  hourHeight: 48,
+  gutter: 44,
+  allDayItem: 24,
+  /** How wide the calendar may grow in a desktop browser. */
+  maxWidth: 1200,
+} as const;

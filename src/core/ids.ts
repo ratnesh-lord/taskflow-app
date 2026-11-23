@@ -100,3 +100,8 @@ export function taskTagId(taskId: string, tagIdValue: string): string {
 export function occurrenceId(taskId: string, date: string): string {
   return uuidV5(`occurrence:${taskId}:${date}`, TASKFLOW_NAMESPACE);
 }
+
+/** The link between a task and its copy in a Google Tasks list: one per task and list, whichever device writes it. */
+export function externalLinkId(taskId: string, listId: string): string {
+  return uuidV5(`external:${taskId}:${listId}`, TASKFLOW_NAMESPACE);
+}

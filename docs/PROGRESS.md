@@ -188,6 +188,73 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - **Overdue rows show the day they were due ("20 Nov")** in the time column. A fixed-width column keeps the titles lined up.
 - The widgets are drawn by the same Kotlin module as the reminders, so a tick on a widget and Mark completed on a notification share one queue and one done list.
 
+## Phase 7: calendar views, drag to reschedule, Google (code complete; needs your Google setup and a phone check)
+
+### What works
+
+- **Calendar views** under **Upcoming → Calendar**:
+  - **Day:** an hour grid with an all-day row above it.
+  - **Week:** Monday to Sunday in the same grid.
+  - **Month:** six weeks with a mark for each task; tap a day to list it below.
+  - **Agenda:** the next 30 days as a list.
+
+  Tasks show as blue blocks, red when overdue, and grey and struck through when done. A task's length is its estimate (30 minutes if it has none). Overlapping tasks share the width, and a red line marks the current time.
+- **Drag to reschedule.** Touch and hold a task (on a computer, press and hold the mouse), then drag it:
+  - to another time (it snaps to quarter hours) or another day in the week view;
+  - onto the all-day row to take its time off;
+  - in the month view, from the day's list onto another day.
+
+  A repeating task moves only that day, as when you move it in the editor. Undo puts it back. The grid scrolls when you hold the task near its top or bottom edge.
+- **Tasks in Google Calendar** (one way). Tasks with a date appear in a calendar named **TaskFlow** that the app creates in your Google Calendar:
+  - All-day tasks are all-day events. Timed tasks last their estimate.
+  - Completed tasks stay, with a ✓.
+  - Each day of a repeating task is its own event, so skipped, moved and completed days show exactly as in TaskFlow.
+  - The calendar updates about 15 seconds after your tasks change, while TaskFlow is open on a device connected to Google. It covers 30 days back to 90 days ahead. With the app closed, the next update happens the next time it is opened.
+  - Each event's id is made from the task (and day), so the same task never makes two events, whichever device sends it (test scenario 9).
+- **Your Google events** appear, read-only, in the calendar views, from the calendars you show in Google Calendar. Tap one to open it in Google Calendar.
+- **Google Tasks:**
+  - **Import:** your first list goes to the Inbox, and each other list becomes a project of the same name. Dates, notes, completion and subtasks come across, and importing again adds only new tasks.
+  - **Copy:** your open tasks go to a **TaskFlow** list. Copying again updates that list: new tasks are added, completed ones ticked and deleted ones removed. Tasks that came from Google Tasks are not copied back.
+- **Drive attachments.** On a task, **Attach a file** uploads a file from the device (up to 25 MB) into a **TaskFlow attachments** folder in your Drive, and links it to the task. TaskFlow can see only the files it uploaded.
+- **More → Google Calendar, Tasks and Drive** holds the switches, shows which Google account this device uses, and has **Disconnect**.
+- **Your Google access stays on your devices.** The app asks Google for access on each device and keeps no token: Google Play services keeps it on the phone, and the browser keeps it in memory only. Nothing goes to Supabase or any other server. Each feature asks only for the narrowest permission it needs.
+
+### How it was checked
+
+- **Calendar rules** (`src/core/calendar.test.ts`, 16 tests): what each day holds, including repeats with skipped, moved and completed days; overlap columns; snapping a drop to quarter hours; and the ranges and steps of each view.
+- **Moving one day of a repeat** from the calendar, against the device database (1 new test): it leaves the current day and the series alone, and refuses a day that is not part of the series or is already done.
+- **Google rules** (`src/core/google.test.ts`, 15 tests): events for one-off and repeating tasks, ids Google accepts, which tasks are left out, sending only differences, placing your events in the phone's time zone, and Google Tasks import and copy.
+- **Google service against an in-memory Google** (`src/data/google.test.ts`, 18 tests). The stand-in follows Google's documented answers: 409 for an event id that exists, 410 for a deleted event, paging, two-step uploads, expired tokens and a busy service. The tests cover:
+  - creating the calendar once and then sending only changes;
+  - a deleted task brought back with Undo, and two devices sending the same task;
+  - recreating the calendar if you delete it, and leaving events older than 30 days alone;
+  - your events, and import and copy for Google Tasks;
+  - Drive uploads, the 25 MB limit, and disconnecting.
+
+  Changing the code to drop the 409 handling or the 30-day limit made these tests fail.
+- **In Chrome** (the web check, 78 checks, 10 new):
+  - the day, week, month and agenda views;
+  - dragging a task up three hours (16:00), then Undo;
+  - dragging a repeating task from the all-day row onto 17:00;
+  - dragging a task to the next day in the week view.
+
+  The database was checked to hold the results. The web check also covers the Google page saying it is not set up when no web client ID is given.
+- **Android build:** the new Google module compiles in CI, and the emulator check still starts the app and draws the widgets.
+
+### Not yet proven
+
+- **Anything against the real Google.** These checks cannot reach Google, and the tests use a stand-in. The first real run needs your Google Cloud setup ([SETUP.md](SETUP.md), section 6b) and the phone checklist in [TESTING.md](TESTING.md). The stand-in follows Google's documentation, which may differ from Google's actual answers in details.
+- **Dragging on the phone.** Dragging was checked in Chrome with a mouse. Touch and hold on Android uses the same gesture library, but no drag has been tried there yet.
+- **The web version's Google sign-in** (a pop-up) has not run, and needs a web client ID (SETUP.md 6b).
+- **Two devices turning on "Tasks in Google Calendar" within the same few seconds** could each create a TaskFlow calendar before they sync. Delete the spare one in Google Calendar; the next update uses the remaining one.
+
+### Decisions in this phase
+
+- **One event per day of a repeating task**, not one repeating event: TaskFlow's repeats move a missing day (31 January → 28 February) where Google's rules would skip it, and skipped or moved days then need no exceptions.
+- **One way only.** An event changed in Google Calendar is put back at the next update; TaskFlow is where tasks are edited. Likewise, the TaskFlow list in Google Tasks is a copy.
+- **No calendar link rows for events.** Each update compares the calendar itself with what it should hold, which also cleans up after a device that went offline mid-update. The `calendar_links` table holds the Google Tasks links instead, so a second import or copy updates rather than duplicates.
+- **The APK is still signed with the standard development key**, so the Android client uses that key's public fingerprint. Phase 10's release key needs its own Android client.
+
 ## Remaining work
 
 - [x] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
@@ -195,7 +262,7 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 - [x] Phase 5: Kotlin alarm runtime, notification actions, reboot and timezone handling, daily and evening summaries, background sync
 - [ ] Wake-up push through Firebase (needs your Firebase project; see Phase 5 decisions)
 - [x] Phase 6: four home-screen widgets, ticking tasks from the widget, quick add from the widget
-- [ ] Phase 7: calendar views, drag to reschedule, Google Calendar, Drive and Tasks
+- [x] Phase 7: calendar views, drag to reschedule, Google Calendar, Drive and Tasks
 - [ ] Phase 8: analytics, daily planning, weekly review, goals, habits, focus timer, notes, Eisenhower matrix
 - [ ] Phase 9: all twelve scenarios on the phone, performance and battery review, desktop layout polish
 - [ ] Phase 10: release signing key, web deployment, final documentation

@@ -23,6 +23,7 @@ import {
   addMonths,
   compareDates,
   diffDays,
+  isLocalDate,
   type LocalDate,
   type LocalTime,
   MONTH_LONG,
@@ -302,13 +303,25 @@ export function planSkip(series: Series, records: readonly OccurrenceRecord[]): 
   return current ? { date: current.date, status: 'skipped', movedToDate: null, movedToTime: null } : null;
 }
 
-/** Moving only the current occurrence to another day (and time). */
+/**
+ * Moving one occurrence to another day (and time): the current one, or a
+ * later one named by its own date (dragged in the calendar). A date that is
+ * not an occurrence of the series, or one already completed or skipped,
+ * moves nothing.
+ */
 export function planMove(
   series: Series,
   records: readonly OccurrenceRecord[],
   toDate: LocalDate,
   toTime: LocalTime | null,
+  occurrenceDate?: LocalDate,
 ): OccurrenceRecord | null {
+  if (occurrenceDate !== undefined) {
+    if (!isLocalDate(occurrenceDate)) return null;
+    const isOccurrence = occurrencesBetween(series.dueDate, series.rule, occurrenceDate, occurrenceDate, series.until).length === 1;
+    if (!isOccurrence || records.some((r) => r.date === occurrenceDate && closes(r))) return null;
+    return { date: occurrenceDate, status: 'skipped', movedToDate: toDate, movedToTime: toTime };
+  }
   const current = currentOccurrence(series, records);
   return current ? { date: current.date, status: 'skipped', movedToDate: toDate, movedToTime: toTime } : null;
 }

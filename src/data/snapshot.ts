@@ -24,7 +24,9 @@ export type ProjectRecord = {
 export type CategoryRecord = { id: string; name: string; color: string | null; sortOrder: number };
 export type TagRecord = { id: string; name: string };
 export type SubtaskRecord = { id: string; taskId: string; title: string; isCompleted: boolean; sortOrder: number };
-export type LinkRecord = { id: string; taskId: string; url: string; name: string };
+export type LinkRecord = { id: string; taskId: string; url: string; name: string; kind: 'file' | 'link' | 'drive' };
+/** Which Google Tasks item belongs to which task (stored in calendar_links). */
+export type ExternalLinkRecord = { id: string; taskId: string; provider: string; listId: string; externalId: string };
 export type SavedFilterRecord = { id: string; name: string; filter: TaskFilter; sortOrder: number };
 export type OccurrenceRow = OccurrenceRecord & { id: string; taskId: string };
 
@@ -39,6 +41,7 @@ export type DataSnapshot = {
   subtasks: Map<string, SubtaskRecord[]>;
   reminders: ReminderRecord[];
   links: Map<string, LinkRecord[]>;
+  externalLinks: ExternalLinkRecord[];
   savedFilters: SavedFilterRecord[];
   /** Edits waiting to be sent to the server. */
   pendingEdits: number;
@@ -84,7 +87,7 @@ function group<T extends { taskId: string }>(items: T[]): Map<string, T[]> {
 }
 
 export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
-  const [tasks, occurrences, projects, categories, tags, taskTags, subtasks, reminders, attachments, filters, pending] = await Promise.all([
+  const [tasks, occurrences, projects, categories, tags, taskTags, subtasks, reminders, attachments, filters, pending, external] = await Promise.all([
     store.rows('tasks'),
     store.rows('task_occurrences'),
     store.rows('projects'),
@@ -96,6 +99,7 @@ export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
     store.rows('attachments'),
     store.rows('saved_filters'),
     store.outboxCount(),
+    store.rows('calendar_links'),
   ]);
   const [profileRow] = await store.rows('profiles');
 
@@ -149,8 +153,14 @@ export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
       isActive: r.is_active !== false,
     })),
     links: group(
-      attachments.filter(ofLiveTask).map((r) => ({ id: r.id, taskId: str(r.task_id), url: str(r.file_url), name: str(r.file_name) })),
+      attachments.filter(ofLiveTask).map((r) => ({
+        id: r.id, taskId: str(r.task_id), url: str(r.file_url), name: str(r.file_name),
+        kind: (r.kind === 'drive' || r.kind === 'file' ? r.kind : 'link') as LinkRecord['kind'],
+      })),
     ),
+    externalLinks: external.filter(ofLiveTask).map((r) => ({
+      id: r.id, taskId: str(r.task_id), provider: str(r.provider), listId: str(r.calendar_id), externalId: str(r.event_id),
+    })),
     savedFilters: filters
       .map((r) => ({ id: r.id, name: str(r.name), filter: readFilter(r.query), sortOrder: num(r.sort_order) }))
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),

@@ -75,6 +75,32 @@ Email sign-up sends a confirmation link by default, and the free plan sends only
 
 Email and password sign-in works without any of this.
 
+## 6b. Turn on the Google integrations (optional)
+
+TaskFlow can put your tasks in Google Calendar, show your Google events, import and copy Google Tasks, and attach files from Drive. Each feature asks your permission the first time you use it. Nothing is stored on a server: the app asks Google for access directly, on each device.
+
+Use the same Google Cloud project as step 6. If you skipped step 6, create the project and fill in the consent screen as described there (step 6, points 1 and 2).
+
+1. **APIs & Services > Library:** search for and **Enable** each of these: **Google Calendar API**, **Google Tasks API**, **Google Drive API**.
+2. **Google Auth Platform > Data access > Add or remove scopes.** (Older versions of the console call this area **APIs & Services > OAuth consent screen**.) Tick the ones below (paste each into the filter box), then **Update** and **Save**:
+   - `.../auth/userinfo.email`
+   - `.../auth/calendar.app.created`
+   - `.../auth/calendar.calendarlist.readonly`
+   - `.../auth/calendar.events.readonly`
+   - `.../auth/tasks`
+   - `.../auth/drive.file`
+3. **Google Auth Platform > Clients > Create client:**
+   - **Application type:** Android
+   - **Package name:** `com.ratnesh.taskflow`
+   - **SHA-1 certificate fingerprint:** `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`
+
+   This fingerprint belongs to the key GitHub currently signs the APK with. It is the standard Android development key, so it is public. In Phase 10 the app gets its own release key, and you will add that key's fingerprint as a second Android client.
+4. On the phone: **More → Google Calendar, Tasks and Drive**, and switch on what you want. The first time, Google shows a screen saying it **hasn't verified this app**. That is expected for a personal app: tap **Advanced**, then **Go to TaskFlow**, then **Allow**.
+
+For the web version on your computer (section 9), also open your **Web application** client from step 6. Under **Authorized JavaScript origins**, add the address the web app runs at, for example `http://localhost:8081`. Then add this line to the `.env` file, using that client's ID: `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=...apps.googleusercontent.com`. The client ID is public; the client secret never goes in the app.
+
+If the phone says **Google does not recognise this app yet**, the Android client is missing, or its package name or fingerprint has a typo.
+
 ## 7. Build and install
 
 1. Merge to `main`, or open **Actions > CI > Run workflow** and run it on `main`. Either way the build is published when it finishes, about 10 to 25 minutes later.

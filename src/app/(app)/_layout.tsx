@@ -5,6 +5,7 @@ import { NoticeBar } from '@/components/NoticeBar';
 import { QuickAddProvider } from '@/components/QuickAdd';
 import { signOut } from '@/platform/auth';
 import { DataProvider, useDataState } from '@/state/data';
+import { GoogleProvider } from '@/state/google';
 import { NowProvider } from '@/state/now';
 import { useTheme } from '@/state/theme';
 import { Button } from '@/ui/Button';
@@ -69,20 +70,23 @@ function Gate() {
   }
 
   return (
-    <QuickAddProvider>
-      <Stack screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: colors.background } }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="task/[id]" />
-        <Stack.Screen name="project/[id]" />
-        <Stack.Screen name="all-tasks" />
-        <Stack.Screen name="completed" />
-        <Stack.Screen name="search" />
-        <Stack.Screen name="categories" />
-        <Stack.Screen name="reminders" />
-        <Stack.Screen name="widgets" />
-        <Stack.Screen name="add" />
-      </Stack>
-      <NoticeBar bottom={onTabs ? TAB_BAR_HEIGHT : 0} right={onTabs ? FAB_SPACE : 0} />
-    </QuickAddProvider>
+    <GoogleProvider>
+      <QuickAddProvider>
+        <Stack screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: colors.background } }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="task/[id]" />
+          <Stack.Screen name="project/[id]" />
+          <Stack.Screen name="all-tasks" />
+          <Stack.Screen name="completed" />
+          <Stack.Screen name="search" />
+          <Stack.Screen name="categories" />
+          <Stack.Screen name="reminders" />
+          <Stack.Screen name="widgets" />
+          <Stack.Screen name="google" />
+          <Stack.Screen name="add" />
+        </Stack>
+        <NoticeBar bottom={onTabs ? TAB_BAR_HEIGHT : 0} right={onTabs ? FAB_SPACE : 0} />
+      </QuickAddProvider>
+    </GoogleProvider>
   );
 }
