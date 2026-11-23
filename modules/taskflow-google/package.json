@@ -1,0 +1,7 @@
+{
+  "name": "taskflow-google",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TaskFlow's Android access to Google Calendar, Tasks and Drive: Google's own authorization screen, no tokens kept by the app.",
+  "main": "index.ts"
+}

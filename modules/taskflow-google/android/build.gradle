@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.ratnesh.taskflow'
+version = '1.0.0'
+
+android {
+  namespace "com.ratnesh.taskflow.google"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // Google Identity Services: AuthorizationClient asks for access to Google APIs.
+  implementation 'com.google.android.gms:play-services-auth:22.0.0'
+}
