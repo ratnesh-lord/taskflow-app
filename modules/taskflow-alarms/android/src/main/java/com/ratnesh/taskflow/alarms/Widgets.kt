@@ -264,6 +264,13 @@ object WidgetRender {
     fun set(v: RemoteViews, id: Int, method: String, pick: (WidgetPalette) -> Int) {
       if (followsPhone) v.setColorInt(id, method, pick(WidgetTokens.light), pick(WidgetTokens.dark)) else v.setInt(id, method, pick(p))
     }
+
+    /** A colour the app sent (a task or priority colour), light and dark. */
+    fun set(v: RemoteViews, id: Int, method: String, pair: ColorPair) {
+      val light = android.graphics.Color.parseColor(pair.light)
+      val dark = android.graphics.Color.parseColor(pair.dark)
+      if (followsPhone) v.setColorInt(id, method, light, dark) else v.setInt(id, method, if (p === WidgetTokens.dark) dark else light)
+    }
   }
 
   private fun text(v: RemoteViews, c: Colors, id: Int, value: CharSequence, size: Float, color: (WidgetPalette) -> Int) {
@@ -361,20 +368,22 @@ object WidgetRender {
     text(r, c, R.id.tf_label, row.label, WidgetTokens.CAPTION) { if (row.earlier) it.overdue else it.textSecondary }
     text(r, c, R.id.tf_text, row.title, WidgetTokens.ROW) { it.text }
     r.setOnClickPendingIntent(R.id.tf_row, openApp(context, "taskflow://task/${row.taskId}", code))
-    when (row.priority) {
-      "critical", "high" -> {
-        r.setImageViewResource(R.id.tf_priority, R.drawable.tf_widget_square_fill)
-        c.set(r, R.id.tf_priority, "setColorFilter") { if (row.priority == "critical") it.accent else it.text }
-        r.setContentDescription(R.id.tf_priority, if (row.priority == "critical") "Critical priority" else "High priority")
-        r.setViewVisibility(R.id.tf_priority, View.VISIBLE)
-      }
-      "medium" -> {
-        r.setImageViewResource(R.id.tf_priority, R.drawable.tf_widget_square_outline)
-        c.set(r, R.id.tf_priority, "setColorFilter") { it.text }
-        r.setViewVisibility(R.id.tf_priority, View.VISIBLE)
-      }
-      else -> r.setViewVisibility(R.id.tf_priority, View.INVISIBLE)
+    // The colour bar: the task's colour (priority or project, as the person set), if any.
+    val bar = row.color
+    if (bar != null) {
+      c.set(r, R.id.tf_bar, "setBackgroundColor", bar)
+      r.setViewVisibility(R.id.tf_bar, View.VISIBLE)
+    } else {
+      r.setViewVisibility(R.id.tf_bar, View.INVISIBLE)
     }
+    // The priority mark: filled for critical and high, outlined for medium and low, in the priority's colour.
+    val filled = row.priority == "critical" || row.priority == "high"
+    r.setImageViewResource(R.id.tf_priority, if (filled) R.drawable.tf_widget_square_fill else R.drawable.tf_widget_square_outline)
+    val mark = row.priorityColor
+    if (mark != null) c.set(r, R.id.tf_priority, "setColorFilter", mark)
+    else c.set(r, R.id.tf_priority, "setColorFilter") { if (row.priority == "critical") it.accent else it.text }
+    r.setContentDescription(R.id.tf_priority, "${row.priority.replaceFirstChar { it.uppercase() }} priority")
+    r.setViewVisibility(R.id.tf_priority, if (mark == null && row.priority == "low") View.INVISIBLE else View.VISIBLE)
     return r
   }
 

@@ -1,8 +1,10 @@
 import { useRouter } from 'expo-router';
 import { Linking, StyleSheet, View } from 'react-native';
 
+import { titleWithEmoji } from '@/core/appearance';
 import type { CalendarEntry } from '@/core/calendar';
 import { minutesToTime } from '@/core/dates';
+import { useLook } from '@/state/look';
 import { useTheme } from '@/state/theme';
 import { shortTime } from '@/ui/format';
 import { Text } from '@/ui/Text';
@@ -29,11 +31,15 @@ export function useOpenEntry() {
 export function Block({ entry, compact, dragging, onPress }: { entry: CalendarEntry; compact?: boolean; dragging?: boolean; onPress: () => void }) {
   // Taps and drags come from the Draggable around it; screen readers activate it here.
   const { colors } = useTheme();
+  const look = useLook();
   const task = entry.kind === 'task' ? entry : null;
   const done = task?.done ?? false;
   const overdue = task ? task.item.overdue : false;
-  const fill = !task ? 'transparent' : done ? colors.divider : overdue ? colors.overdue : colors.accent;
-  const ink = !task || done ? colors.text : colors.onAccent;
+  // The task's own colour (priority or project), else the accent; overdue tasks get a red edge.
+  const own = task ? look.taskHex(task.item.task) : null;
+  const fill = !task ? 'transparent' : done ? colors.divider : own ?? colors.accent;
+  const ink = !task || done ? colors.text : own ? look.ink : colors.onAccent;
+  const edge = !task ? colors.textSecondary : overdue && !done ? colors.overdue : fill;
   const time = entry.start != null ? shortTime(minutesToTime(entry.start)) : null;
   const label = `${entryTitle(entry)}${time ? `, ${time}` : ''}${task ? (done ? ', completed' : overdue ? ', overdue' : '') : `, ${entry.kind === 'event' ? entry.event.calendarName : ''} event`}`;
 
@@ -45,13 +51,13 @@ export function Block({ entry, compact, dragging, onPress }: { entry: CalendarEn
       accessibilityHint={task && !done ? 'Opens the task. Touch and hold, then drag, to move it.' : undefined}
       accessibilityActions={ACTIVATE}
       onAccessibilityAction={onPress}
-      style={[styles.block, { backgroundColor: fill, borderColor: task ? fill : colors.textSecondary, opacity: dragging ? 0.35 : 1 }]}>
+      style={[styles.block, { backgroundColor: fill, borderColor: edge, borderWidth: overdue && !done ? 2 : 1, opacity: dragging ? 0.35 : 1 }]}>
       <View style={styles.inner}>
         <Text
           variant="caption"
           numberOfLines={compact ? 1 : 2}
           style={[{ color: ink }, styles.title, done && { textDecorationLine: 'line-through', color: colors.textSecondary }]}>
-          {entryTitle(entry)}
+          {entry.kind === 'task' ? titleWithEmoji(entry.item.task) : entryTitle(entry)}
         </Text>
         {!compact && time ? (
           <Text variant="caption" numberOfLines={1} style={{ color: done || !task ? colors.textSecondary : ink }}>

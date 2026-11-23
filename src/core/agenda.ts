@@ -29,6 +29,8 @@ export type TaskRecord = {
   completedAt: string | null;
   rrule: string | null;
   recurUntil: LocalDate | null;
+  /** Its picture, if any (src/core/appearance.ts). */
+  icon?: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

@@ -4,15 +4,20 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import type { TaskItem } from '@/core/agenda';
 import { dayLabel, type LocalDate } from '@/core/dates';
 import type { Priority } from '@/core/types';
+import { useLook } from '@/state/look';
 import { useTheme } from '@/state/theme';
 import { Checkbox } from '@/ui/Checkbox';
 import { shortTime } from '@/ui/format';
 import { Icon } from '@/ui/Icon';
 import { Text } from '@/ui/Text';
+
+import { TaskPicture } from './TaskPicture';
 import { space } from '@/ui/tokens';
 
 export type RowInfo = {
   projectName?: string | null;
+  /** The task's colour (by priority or project, as set), or null. */
+  color?: string | null;
   tagNames?: string[];
   subtasks?: { done: number; total: number };
   hasReminder?: boolean;
@@ -31,14 +36,12 @@ export type TaskRowProps = {
   onSelect: (item: TaskItem) => void;
 };
 
+/** The priority as a small square in its colour: filled for critical and high, outlined for medium and low. */
 export function PriorityMark({ priority }: { priority: Priority }) {
-  const { colors } = useTheme();
-  if (priority === 'low') return <View style={styles.markSpace} />;
+  const look = useLook();
   const label = `${priority.charAt(0).toUpperCase()}${priority.slice(1)} priority`;
-  const style =
-    priority === 'critical' ? { backgroundColor: colors.accent }
-    : priority === 'high' ? { backgroundColor: colors.text }
-    : { borderWidth: 1.5, borderColor: colors.text };
+  const color = look.priorityHex(priority);
+  const style = priority === 'critical' || priority === 'high' ? { backgroundColor: color } : { borderWidth: 1.5, borderColor: color };
   return <View role="img" accessibilityLabel={label} aria-label={label} style={[styles.mark, style]} />;
 }
 
@@ -75,6 +78,7 @@ export const TaskRow = memo(function TaskRow({ item, info, today, lead, selectin
         selected && { backgroundColor: colors.divider },
         pressed && !selecting && { opacity: 0.7 },
       ]}>
+      {info.color ? <View style={[styles.bar, { backgroundColor: info.color, opacity: done ? 0.4 : 1 }]} /> : null}
       <Text variant="caption" numberOfLines={1} style={[styles.lead, { color: red ? colors.overdue : colors.textSecondary }]}>
         {leadText(item, today, lead)}
       </Text>
@@ -92,6 +96,11 @@ export const TaskRow = memo(function TaskRow({ item, info, today, lead, selectin
       ) : (
         <Checkbox checked={done} alert={red} label={`${done ? 'Reopen' : 'Complete'}: ${item.task.title}`} onPress={() => onToggle(item)} />
       )}
+      {item.task.icon ? (
+        <View style={[styles.picture, done && { opacity: 0.5 }]}>
+          <TaskPicture icon={item.task.icon} size={26} color={info.color} />
+        </View>
+      ) : null}
       <View style={styles.body}>
         <Text
           variant="bodyStrong"
@@ -122,11 +131,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingRight: space.md,
   },
-  lead: { width: 56, paddingLeft: space.xs, fontVariant: ['tabular-nums'] },
+  lead: { width: 60, paddingLeft: space.sm + 2, fontVariant: ['tabular-nums'] },
   body: { flex: 1, minWidth: 0, gap: 2, paddingVertical: space.sm, paddingRight: space.sm },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   mark: { width: 8, height: 8 },
-  markSpace: { width: 8 },
+  bar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
+  picture: { marginRight: space.sm },
   selectBox: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   box: { width: 20, height: 20, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
 });

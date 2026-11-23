@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { allItems, progressOf, type Progress } from '@/core/agenda';
+import { isColorName } from '@/core/appearance';
+import { Swatch } from '@/components/ColorSheet';
 import { ProjectSheet } from '@/components/ProjectSheet';
 import { HeaderTools } from '@/components/HeaderTools';
 import { QuickAddButton } from '@/components/QuickAdd';
@@ -94,6 +96,7 @@ function ProjectRow({ project, progress, onPress }: { project: ProjectRecord; pr
       onPress={onPress}
       style={({ pressed }) => ({ paddingVertical: space.md, gap: space.sm, borderBottomWidth: 1, borderBottomColor: colors.divider, opacity: pressed ? 0.7 : 1 })}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+        {isColorName(project.color) ? <Swatch name={project.color} size={12} /> : null}
         <Text variant="bodyStrong" color={archived ? 'textSecondary' : 'text'} numberOfLines={1} style={{ flex: 1 }}>
           {project.name}
         </Text>

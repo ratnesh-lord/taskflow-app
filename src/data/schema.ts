@@ -31,7 +31,7 @@ export const TABLES = {
   tasks: {
     title: t(), description: t("''"), notes: t("''"), status: t("'inbox'"), priority: t("'medium'"),
     project_id: t(), category_id: t(), due_date: t(), due_time: t(), due_tz: t(), estimated_minutes: i(),
-    completed_at: t(), rrule: t(), recur_until: t(), sort_order: r('0'),
+    completed_at: t(), rrule: t(), recur_until: t(), sort_order: r('0'), icon: t(),
   },
   task_occurrences: {
     task_id: t(), occurrence_date: t(), status: t("'completed'"), completed_at: t(), moved_to_date: t(), moved_to_time: t(),
@@ -75,11 +75,27 @@ export function columnsOf(table: TableName): Columns {
   return TABLES[table];
 }
 
+/**
+ * Columns added after the first version, by the local migration that adds
+ * them. The first migration leaves them out, so a new install and an
+ * upgraded one end up the same.
+ */
+const ADDED_LATER: Partial<Record<TableName, readonly string[]>> = { tasks: ['icon'] };
+
+function columnSql(name: string, c: { type: ColumnType; default?: string }): string {
+  const sqlType = c.type === 'int' || c.type === 'bool' ? 'INTEGER' : c.type === 'real' ? 'REAL' : 'TEXT';
+  return `${name} ${sqlType}${c.default !== undefined ? ` NOT NULL DEFAULT ${c.default}` : ''}`;
+}
+
+function addColumn(table: TableName, name: string): string {
+  return `ALTER TABLE ${table} ADD COLUMN ${columnSql(name, columnsOf(table)[name])};`;
+}
+
 function createTable(table: TableName): string {
-  const cols = Object.entries(columnsOf(table)).map(([name, c]) => {
-    const sqlType = c.type === 'int' || c.type === 'bool' ? 'INTEGER' : c.type === 'real' ? 'REAL' : 'TEXT';
-    return `${name} ${sqlType}${c.default !== undefined ? ` NOT NULL DEFAULT ${c.default}` : ''}`;
-  });
+  const later = ADDED_LATER[table] ?? [];
+  const cols = Object.entries(columnsOf(table))
+    .filter(([name]) => !later.includes(name))
+    .map(([name, c]) => columnSql(name, c));
   return `CREATE TABLE IF NOT EXISTS ${table} (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -114,6 +130,8 @@ export const LOCAL_MIGRATIONS: string[] = [
     );`,
     'CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);',
   ].join('\n'),
+  // 2: a task's picture (emoji, clipart or photo), as on the server since migration 20261123000100.
+  addColumn('tasks', 'icon'),
 ];
 
 /** JavaScript value → stored value. */

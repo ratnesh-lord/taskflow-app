@@ -32,11 +32,11 @@ week="$(python3 -c "w=[3,1,0,4,2,5,2]; d=$dow; print([n if i<=d else 0 for i,n i
 data="$(cat <<JSON
 {"version":1,"generatedAt":1,"signedIn":true,"hour12":false,"days":[
  {"date":"$today","heading":"$(dayname "$today")","pending":4,"overdue":1,"done":2,"important":2,"week":$week,"rows":[
-  {"taskId":"t-late","occurrenceDate":null,"title":"Renew passport","label":"$(date -d "$yesterday" "+%-d %b")","due":"$yesterday","priority":"high","earlier":true},
-  {"taskId":"t-bill","occurrenceDate":null,"title":"Pay electricity bill","label":"13:00","due":"${today}T13:00","priority":"high","earlier":false},
-  {"taskId":"t-report","occurrenceDate":null,"title":"Project report draft","label":"16:30","due":"${today}T16:30","priority":"critical","earlier":false},
-  {"taskId":"t-aws","occurrenceDate":"$today","title":"Complete AWS certification revision, chapters 7 to 9","label":"23:30","due":"${today}T23:30","priority":"medium","earlier":false},
-  {"taskId":"t-bank","occurrenceDate":null,"title":"Call the bank","label":"Any","due":"$today","priority":"low","earlier":false}]},
+  {"taskId":"t-late","occurrenceDate":null,"title":"Renew passport","color":{"light":"#C2410C","dark":"#FB923C"},"priorityColor":{"light":"#C2410C","dark":"#FB923C"},"label":"$(date -d "$yesterday" "+%-d %b")","due":"$yesterday","priority":"high","earlier":true},
+  {"taskId":"t-bill","occurrenceDate":null,"title":"🧾 Pay electricity bill","color":{"light":"#C2410C","dark":"#FB923C"},"priorityColor":{"light":"#C2410C","dark":"#FB923C"},"label":"13:00","due":"${today}T13:00","priority":"high","earlier":false},
+  {"taskId":"t-report","occurrenceDate":null,"title":"Project report draft","color":{"light":"#DC2626","dark":"#F87171"},"priorityColor":{"light":"#DC2626","dark":"#F87171"},"label":"16:30","due":"${today}T16:30","priority":"critical","earlier":false},
+  {"taskId":"t-aws","occurrenceDate":"$today","title":"🎓 Complete AWS certification revision, chapters 7 to 9","color":{"light":"#2563EB","dark":"#60A5FA"},"priorityColor":{"light":"#2563EB","dark":"#60A5FA"},"label":"23:30","due":"${today}T23:30","priority":"medium","earlier":false},
+  {"taskId":"t-bank","occurrenceDate":null,"title":"Call the bank","color":{"light":"#4B5563","dark":"#9CA3AF"},"priorityColor":{"light":"#4B5563","dark":"#9CA3AF"},"label":"Any","due":"$today","priority":"low","earlier":false}]},
  {"date":"$tomorrow","heading":"$(dayname "$tomorrow")","pending":0,"overdue":0,"done":0,"important":0,"week":[0,0,0,0,0,0,0],"rows":[]}]}
 JSON
 )"

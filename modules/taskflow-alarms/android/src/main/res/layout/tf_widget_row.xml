@@ -11,7 +11,8 @@
     android:layout_height="43dp"
     android:gravity="center_vertical"
     android:orientation="horizontal">
-    <ImageView android:id="@+id/tf_check" android:layout_width="40dp" android:layout_height="43dp" android:layout_marginStart="-12dp" android:paddingStart="12dp" android:paddingTop="13dp" android:paddingEnd="10dp" android:paddingBottom="12dp" android:src="@drawable/tf_widget_box" />
+    <FrameLayout android:id="@+id/tf_bar" android:layout_width="3dp" android:layout_height="match_parent" android:visibility="invisible" />
+    <ImageView android:id="@+id/tf_check" android:layout_width="40dp" android:layout_height="43dp" android:layout_marginStart="-9dp" android:paddingStart="12dp" android:paddingTop="13dp" android:paddingEnd="10dp" android:paddingBottom="12dp" android:src="@drawable/tf_widget_box" />
     <TextView android:id="@+id/tf_label" style="@style/TaskflowWidget.Regular" android:layout_width="52dp" android:layout_height="wrap_content" android:layout_marginEnd="8dp" android:maxLines="1" />
     <TextView android:id="@+id/tf_text" style="@style/TaskflowWidget.Medium" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:maxLines="1" android:ellipsize="end" />
     <ImageView android:id="@+id/tf_priority" android:layout_width="8dp" android:layout_height="8dp" android:layout_marginStart="8dp" android:importantForAccessibility="no" />

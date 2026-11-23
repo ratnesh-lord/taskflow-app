@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { allItems, compareItems, progressOf } from '@/core/agenda';
+import { isColorName } from '@/core/appearance';
+import { ColorSheet, Swatch } from '@/components/ColorSheet';
 import { DateSheet } from '@/components/DateSheet';
 import { QuickAddButton } from '@/components/QuickAdd';
 import { SelectionBar } from '@/components/SelectionBar';
@@ -17,7 +19,7 @@ import { deadlineText } from '@/ui/format';
 import { FieldRow, MenuRow, SectionTitle } from '@/ui/Row';
 import { Screen } from '@/ui/Screen';
 import { Text } from '@/ui/Text';
-import { FAB_SPACE, space } from '@/ui/tokens';
+import { FAB_SPACE, space, taskColors } from '@/ui/tokens';
 
 /** One project: its details, progress and tasks. */
 export default function ProjectScreen() {
@@ -29,9 +31,12 @@ export default function ProjectScreen() {
   const router = useRouter();
   const selection = useSelection();
   const [picking, setPicking] = useState(false);
+  const [coloring, setColoring] = useState(false);
 
   const project = data.projects.find((p) => p.id === id);
   const items = useMemo(() => allItems(data, now).filter((i) => i.task.projectId === id), [data, now, id]);
+
+  const color = project && isColorName(project.color) ? project.color : null;
 
   if (!project) {
     return (
@@ -97,13 +102,31 @@ export default function ProjectScreen() {
         </View>
       </View>
 
-      <FieldRow
-        label="Deadline"
-        value={project.deadline ? deadlineText(project.deadline, now.date) : null}
-        placeholder="None"
-        valueColor={late ? 'overdue' : 'text'}
-        onPress={() => setPicking(true)}
-        last
+      <View>
+        <FieldRow
+          label="Deadline"
+          value={project.deadline ? deadlineText(project.deadline, now.date) : null}
+          placeholder="None"
+          valueColor={late ? 'overdue' : 'text'}
+          onPress={() => setPicking(true)}
+        />
+        <FieldRow label="Colour" value={color ? taskColors[color].label : null} placeholder="None" onPress={() => setColoring(true)} last>
+          {color ? <Swatch name={color} size={14} /> : null}
+          <Text variant="smallStrong" color={color ? 'text' : 'textSecondary'} style={{ flex: 1 }}>
+            {color ? taskColors[color].label : 'None'}
+          </Text>
+        </FieldRow>
+      </View>
+      <ColorSheet
+        visible={coloring}
+        title="Project colour"
+        value={color}
+        allowNone
+        onClose={() => setColoring(false)}
+        onPick={(c) => {
+          setColoring(false);
+          void run(() => actions.updateProject(id, { color: c }));
+        }}
       />
 
       <TaskList

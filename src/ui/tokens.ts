@@ -95,3 +95,26 @@ export const calendarGrid = {
   /** How wide the calendar may grow in a desktop browser. */
   maxWidth: 1200,
 } as const;
+
+/**
+ * Colours a person can give tasks (through priorities) and projects. Each has
+ * a fill for light and for dark, and the ink that reads on it: white on the
+ * darker light-mode fills, near-black on the lighter dark-mode fills (at
+ * least 4.5:1 either way; checked in task-colors.test.ts).
+ */
+export const taskColors = {
+  red: { label: 'Red', light: '#DC2626', dark: '#F87171' },
+  orange: { label: 'Orange', light: '#C2410C', dark: '#FB923C' },
+  amber: { label: 'Amber', light: '#B45309', dark: '#FBBF24' },
+  green: { label: 'Green', light: '#15803D', dark: '#4ADE80' },
+  teal: { label: 'Teal', light: '#0F766E', dark: '#2DD4BF' },
+  cyan: { label: 'Cyan', light: '#0E7490', dark: '#22D3EE' },
+  blue: { label: 'Blue', light: '#2563EB', dark: '#60A5FA' },
+  indigo: { label: 'Indigo', light: '#4F46E5', dark: '#818CF8' },
+  violet: { label: 'Violet', light: '#7C3AED', dark: '#A78BFA' },
+  pink: { label: 'Pink', light: '#DB2777', dark: '#F472B6' },
+  grey: { label: 'Grey', light: '#4B5563', dark: '#9CA3AF' },
+} as const;
+
+/** Ink on a task colour: white in light mode, near-black in dark. */
+export const taskColorInk = { light: '#FFFFFF', dark: '#101010' } as const;

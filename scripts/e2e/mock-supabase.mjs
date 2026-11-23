@@ -105,21 +105,63 @@ function send(res, status, body) {
 }
 const authError = (res, status, code, msg) => send(res, status, { code: status, error_code: code, msg });
 
+// ---- Storage: the private "attachments" bucket, in memory ---------------------------
+// Like the bucket's rules (migration 5), a user may only touch files under a
+// folder named after their own id.
+const files = new Map(); // "bucket/path" -> { bytes, type }
+function storage(req, res, url, bytes) {
+  const sub = subjectOf(req);
+  const signed = /^\/storage\/v1\/object\/sign\/([^/]+)\/(.+)$/.exec(url.pathname);
+  if (signed && req.method === 'GET') {
+    const file = files.get(`${signed[1]}/${decodeURIComponent(signed[2])}`);
+    if (!file || url.searchParams.get('token') !== 'mock-signed') return send(res, 400, { message: 'Object not found' });
+    res.writeHead(200, { ...CORS, 'Content-Type': file.type, 'Content-Length': file.bytes.length });
+    return res.end(file.bytes);
+  }
+  if (!sub) return send(res, 403, { message: 'not signed in' });
+  const object = /^\/storage\/v1\/object\/(sign\/)?([^/]+)\/(.+)$/.exec(url.pathname);
+  if (!object) return send(res, 404, { message: 'no such storage route' });
+  const [, sign, bucket, path] = object;
+  const key = `${bucket}/${decodeURIComponent(path)}`;
+  if (bucket !== 'attachments' || !decodeURIComponent(path).startsWith(`${sub}/`)) {
+    return send(res, 403, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' });
+  }
+  if (sign && req.method === 'POST') {
+    if (!files.has(key)) return send(res, 400, { statusCode: '404', error: 'not_found', message: 'Object not found' });
+    return send(res, 200, { signedURL: `/object/sign/${bucket}/${path}?token=mock-signed` });
+  }
+  if (!sign && req.method === 'POST') {
+    if (files.has(key) && req.headers['x-upsert'] !== 'true') return send(res, 400, { statusCode: '409', error: 'Duplicate', message: 'The resource already exists' });
+    files.set(key, { bytes, type: req.headers['content-type'] ?? 'application/octet-stream' });
+    return send(res, 200, { Key: key, Id: key });
+  }
+  return send(res, 405, { message: 'method not allowed' });
+}
+
 const server = http.createServer((req, res) => {
-  let raw = '';
-  req.on('data', (chunk) => (raw += chunk));
+  const chunks = [];
+  req.on('data', (chunk) => chunks.push(chunk));
   req.on('end', () => {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    const bytes = Buffer.concat(chunks);
+    console.log(`${req.method} ${url.pathname}${url.search}`);
+    if (req.method === 'OPTIONS') return send(res, 204);
+    if (url.pathname.startsWith('/storage/v1/')) {
+      try {
+        return storage(req, res, url, bytes);
+      } catch (e) {
+        return send(res, 500, { message: String(e) });
+      }
+    }
+    const raw = bytes.toString('utf8');
     let body = {};
     try {
       body = raw ? JSON.parse(raw) : {};
     } catch {
       return send(res, 400, { message: 'invalid JSON' });
     }
-    console.log(`${req.method} ${url.pathname}${url.search}`);
 
     try {
-      if (req.method === 'OPTIONS') return send(res, 204);
 
       // ---- sign-in service -------------------------------------------------
       if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type') === 'password') {

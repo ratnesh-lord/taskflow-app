@@ -21,6 +21,7 @@
  * rather than duplicates.
  */
 import { itemOf, seriesOf, type Snapshot, type TaskItem, upcomingView } from './agenda';
+import { titleWithEmoji } from './appearance';
 import { DEFAULT_TASK_MINUTES, type ExternalEvent } from './calendar';
 import { addDays, type LocalDate, minutesToTime, type Now, timeToMinutes } from './dates';
 import { isOpenStatus } from './types';
@@ -138,7 +139,7 @@ function eventFor(item: TaskItem, done: boolean, timeZone: string): EventBody {
     endTime = { dateTime: `${endDate}T${minutesToTime(endMinutes % (24 * 60))}:00`, timeZone };
   }
   const shown = {
-    summary: `${done ? '✓ ' : ''}${item.task.title}`,
+    summary: `${done ? '✓ ' : ''}${titleWithEmoji(item.task)}`,
     description: item.task.description.trim() ? `${item.task.description.trim()}\n\n${FOOTER}` : FOOTER,
     start: startTime,
     end: endTime,

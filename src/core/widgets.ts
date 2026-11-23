@@ -10,6 +10,7 @@
  * The counts are the Today screen's: "pending" is still open today,
  * "overdue" is still open from an earlier day, "done" is completed today.
  */
+import { titleWithEmoji } from './appearance';
 import { completedByDay, type Snapshot, type TaskItem, type ToLocalDate, todayView } from './agenda';
 import { addDays, formatTime, type LocalDate, MONTH_SHORT, type Now, parts, startOfWeek, WEEKDAY_SHORT, weekday } from './dates';
 import type { Priority } from './types';
@@ -28,6 +29,9 @@ export type WidgetRow = {
   priority: Priority;
   /** Open from an earlier day (overdue). */
   earlier: boolean;
+  /** Added by the app before sending (src/platform/widgets.ts): the row's colour bar and priority mark, light and dark. */
+  color?: { light: string; dark: string } | null;
+  priorityColor?: { light: string; dark: string } | null;
 };
 
 export type WidgetDay = {
@@ -71,7 +75,7 @@ function rowOf(item: TaskItem, day: LocalDate, hour12: boolean): WidgetRow {
   return {
     taskId: item.task.id,
     occurrenceDate: item.occurrence?.date ?? null,
-    title: item.task.title,
+    title: titleWithEmoji(item.task),
     label: earlier ? dayMonth(date) : item.time ? formatTime(item.time, hour12) : 'Any',
     due: item.time ? `${date}T${item.time}` : date,
     priority: item.task.priority,
