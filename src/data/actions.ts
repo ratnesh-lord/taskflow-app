@@ -370,6 +370,8 @@ export class Actions {
     date: LocalDate | null,
     time: LocalTime | null | undefined,
     scope: 'occurrence' | 'series' = 'occurrence',
+    /** For one repeating task: which occurrence to move (default: the current one). */
+    occurrenceDate?: LocalDate,
   ): Promise<UndoLog> {
     const { undo } = await this.store.transaction(async (tx) => {
       for (const id of taskIds) {
@@ -377,7 +379,7 @@ export class Actions {
         const series = seriesOf(task);
         const keepTime = time === undefined ? task.dueTime : time;
         if (series && scope === 'occurrence' && date) {
-          const record = planMove(series, await this.records(tx, id), date, keepTime);
+          const record = planMove(series, await this.records(tx, id), date, keepTime, occurrenceDate);
           if (record) await this.writeOccurrence(tx, id, record);
         } else {
           await this.patchTask(tx, id, { dueDate: date, dueTime: date ? keepTime : null });

@@ -162,6 +162,23 @@ describe('rescheduling', () => {
     expect(taskIn(s, id)).toMatchObject({ dueDate: '2026-11-25', dueTime: '18:00' });
   });
 
+  it('moves a later occurrence dragged in the calendar, leaving the current one and the series alone', async () => {
+    const { actions, snap } = await setup();
+    const { id } = await actions.createTask({ title: 'Gym', dueDate: '2026-11-14', dueTime: '07:00', rrule: 'FREQ=DAILY' });
+    await actions.reschedule([id], '2026-11-20', '18:30', 'occurrence', '2026-11-19');
+    const s = await snap();
+    const records = s.occurrences.get(id) ?? [];
+    expect(records.map((r) => [r.date, r.status, r.movedToDate, r.movedToTime])).toEqual([['2026-11-19', 'skipped', '2026-11-20', '18:30']]);
+    expect(itemOf(taskIn(s, id), records, nowFrom(moment))).toMatchObject({ date: '2026-11-14', time: '07:00' });
+    expect(taskIn(s, id)).toMatchObject({ dueDate: '2026-11-14', dueTime: '07:00' });
+    // A day that is not one of its days, or one already done, is not moved.
+    const before = (await snap()).occurrences.get(id)!.length;
+    await actions.complete([id]);
+    await actions.reschedule([id], '2026-11-21', null, 'occurrence', '2026-11-14');
+    await actions.reschedule([id], '2026-11-21', null, 'occurrence', '2026-11-10');
+    expect((await snap()).occurrences.get(id)!.length).toBe(before + 1);
+  });
+
   it('skips one occurrence', async () => {
     const { actions, snap } = await setup();
     const { id } = await actions.createTask({ title: 'Gym', dueDate: '2026-11-14', rrule: 'FREQ=DAILY' });
