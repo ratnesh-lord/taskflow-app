@@ -5,9 +5,9 @@ Eight layers of automated checks run on every push (GitHub Actions, workflow **C
 | Layer | What it proves | Run it yourself |
 | --- | --- | --- |
 | Database tests | Access rules, merging, paging, purge, concurrency, on a real Postgres with the project's migrations; then the app's sync engine with two devices against those same functions | `npm run test:db` (after `npm ci`) |
-| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, cancelling snoozes of finished tasks, Mark completed from a notification, what the widgets show, widget colours matching the app's, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
+| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, cancelling snoozes of finished tasks, Mark completed from a notification, what the widgets show, widget colours matching the app's, the calendar views and drops, Google Calendar, Tasks and Drive against an in-memory Google, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
 | Typecheck and lint | Types are sound; no rounded corner anywhere in the code | `npm run typecheck`, `npm run lint` |
-| Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, sign out | `bash scripts/e2e/run.sh` |
+| Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, the calendar views and dragging tasks in them, sign out | `bash scripts/e2e/run.sh` |
 | App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
 | Alarm and widget rules | The Kotlin alarm runtime's time-zone, due, late and summary rules, and the widgets' day, tick, deadline and next-reminder rules, on an ordinary JVM | `bash modules/taskflow-alarms/test-kotlin.sh` (needs `kotlinc`) |
 | Android build | The app, including the Kotlin alarm runtime and widgets, compiles and packages into an installable APK | GitHub Actions only |
@@ -37,6 +37,27 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres npm run test:db
 It needs Chrome and `pip install playwright` in addition to the database requirements above. Screenshots are written to `/tmp/taskflow-e2e`.
 
 It does not cover Google sign-in, the real Supabase sign-in service or the real Realtime service; the phone checklist does.
+
+## Phone checklist for Phase 7
+
+First, install the newest APK. The calendar part needs nothing else.
+
+- [ ] **Upcoming → Calendar → Day:** your tasks sit at their times, and today has a red line at the current time.
+- [ ] Touch and hold a task, drag it down an hour, and let go. It moves and says **Moved to …**; **Undo** puts it back.
+- [ ] Drag a repeating task's block to another time: only that day moves.
+- [ ] **Week:** drag a task sideways onto another day. **Month:** tap a day, then drag one of its tasks onto another day.
+- [ ] Scroll the hour grid with a quick swipe over a task: it scrolls rather than picking the task up.
+
+For the Google part, do [SETUP.md](SETUP.md) section 6b first.
+
+- [ ] **More → Google Calendar, Tasks and Drive → Tasks in Google Calendar.** Google asks for permission (and says the app is not verified: Advanced → Go to TaskFlow). Within a minute, Google Calendar has a **TaskFlow** calendar with your dated tasks.
+- [ ] Change a task's time in TaskFlow: about 15 seconds later the event moves. Complete it: it gets a ✓. Delete it: the event goes.
+- [ ] A daily task shows as one event per day; skip a day in TaskFlow and that day's event goes.
+- [ ] **Show my Google events:** your meetings appear (outlined) in Upcoming → Calendar. Tap one: Google Calendar opens it.
+- [ ] **Import from Google Tasks…:** choose lists, then Import. The tasks appear (your first list in the Inbox, others as projects). Import again: nothing is added twice.
+- [ ] **Copy my tasks to Google Tasks:** a **TaskFlow** list appears in Google Tasks. Complete a task in TaskFlow and copy again: it is ticked there.
+- [ ] On a task, **Attach a file**, then choose a photo. It appears under Links. Tap it: it opens from your Drive, in a **TaskFlow attachments** folder.
+- [ ] **Disconnect Google**, then check myaccount.google.com → Security → Third-party connections: TaskFlow is gone.
 
 ## Phone checklist for Phase 6
 
@@ -117,7 +138,7 @@ Run these on the phone after [setup](SETUP.md). Each line is something no automa
 | 4, 5 | Complete from the widget; widget changes sync | Tested now: the tick's rules (JVM), the tap queued and the sync started with the app closed (emulator), and completing from a queued tap (unit); on the phone in the Phase 6 checklist |
 | 6, 7 | Create offline; sync on reconnect | Tested now: sync engine against the database, and two browsers in the web check; phone checklist below |
 | 8 | Edit the same task on two devices | Tested now: database rules, sync engine with two devices, two browsers; phone checklist below |
-| 9 | Recurring tasks | Repeat rules, completing, skipping and moving one time tested now (unit and web); calendar views in Phase 7 |
+| 9 | Recurring tasks | Repeat rules, completing, skipping and moving one time tested now (unit and web); one day dragged in the calendar (unit and web); each day its own Google Calendar event, never duplicated (against an in-memory Google); with real Google in the Phase 7 checklist |
 | 10 | Timezone change | Runtime rules tested now (wall-clock times, fixed zones, daylight-saving gap); on the phone in the checklist above |
 | 11 | Overdue calculation | Tested now: unit tests of the rule and the Today counts, and the web check |
 | 12 | Users cannot access other users' tasks | Tested now, automatically, on every push |
