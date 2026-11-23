@@ -24,3 +24,11 @@ export async function pickTextFile(): Promise<string | null> {
   if (result.canceled || !result.assets?.length) return null;
   return new File(result.assets[0].uri).text();
 }
+
+/** Any file the person picks, read only when uploaded; null if they cancelled. */
+export async function pickAnyFile(): Promise<{ name: string; mimeType: string | null; size: number | null; bytes: () => Promise<ArrayBuffer> } | null> {
+  const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
+  if (result.canceled || !result.assets?.length) return null;
+  const asset = result.assets[0];
+  return { name: asset.name, mimeType: asset.mimeType ?? null, size: asset.size ?? null, bytes: () => new File(asset.uri).arrayBuffer() };
+}

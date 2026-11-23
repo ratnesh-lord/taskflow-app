@@ -5,7 +5,8 @@
 import { seriesOf } from '@/core/agenda';
 import type { SummarySettings } from '@/core/alarms';
 import { type LocalDate, type LocalTime, localDateOf, toMoment } from '@/core/dates';
-import { normaliseTagName, occurrenceId, tagId, taskTagId } from '@/core/ids';
+import { readGoogleSettings, type GoogleSettings } from '@/core/google';
+import { externalLinkId, normaliseTagName, occurrenceId, tagId, taskTagId } from '@/core/ids';
 import type { QuickAdd, ReminderDraft } from '@/core/quick-add';
 import { currentOccurrence, type OccurrenceRecord, planCompletion, planMove, planSkip } from '@/core/recurrence';
 import type { TaskFilter } from '@/core/filters';
@@ -484,6 +485,70 @@ export class Actions {
       if (!profile) throw new InvalidInput('Your profile has not arrived from your account yet. Sync, then try again.');
       const settings = (profile.settings && typeof profile.settings === 'object' ? profile.settings : {}) as Record<string, unknown>;
       await tx.write('profiles', userId, { settings: { ...settings, notifications: { morning: summaries.morning, evening: summaries.evening } } });
+    });
+    return undo;
+  }
+
+  /** Google integration settings, kept in the profile so every device uses the same calendar, list and folder. */
+  async setGoogleSettings(userId: string, patch: Partial<GoogleSettings>): Promise<void> {
+    await this.store.transaction(async (tx) => {
+      const profile = await tx.get('profiles', userId);
+      if (!profile) throw new InvalidInput('Your profile has not arrived from your account yet. Sync, then try again.');
+      const settings = (profile.settings && typeof profile.settings === 'object' ? profile.settings : {}) as Record<string, unknown>;
+      const google = { ...readGoogleSettings(settings), ...patch };
+      await tx.write('profiles', userId, { settings: { ...settings, google } });
+    });
+  }
+
+  /** Remember which Google Tasks item a task belongs to (calendar_links holds it). */
+  async linkExternal(taskId: string, provider: string, listId: string, externalId: string): Promise<void> {
+    await this.store.transaction(async (tx) => {
+      const id = externalLinkId(taskId, listId);
+      const existing = await tx.get('calendar_links', id);
+      if (existing?.deleted_at) await tx.restore('calendar_links', id);
+      if (existing && !existing.deleted_at && existing.event_id === externalId && existing.provider === provider) return;
+      await tx.write('calendar_links', id, { task_id: taskId, provider, calendar_id: listId, event_id: externalId, last_synced_at: this.now().toISOString() });
+    });
+  }
+
+  /** A task brought in from Google Tasks, with its subtasks and the link back to the Google task, in one step. */
+  async importTask(input: {
+    title: string; description: string; dueDate: LocalDate | null; completedAt: string | null; projectId: string | null;
+    subtasks: { title: string; done: boolean }[]; provider: string; listId: string; googleId: string;
+  }): Promise<string> {
+    const id = this.opts.newId();
+    await this.store.transaction(async (tx) => {
+      const organised = !!(input.projectId || input.dueDate);
+      await tx.write('tasks', id, {
+        title: input.title.slice(0, 500), description: input.description, project_id: input.projectId, due_date: input.dueDate,
+        status: input.completedAt ? 'completed' : organised ? 'not_started' : 'inbox', completed_at: input.completedAt,
+        priority: 'medium', sort_order: this.now().getTime(),
+      });
+      for (const [i, sub] of input.subtasks.entries()) {
+        await tx.write('subtasks', this.opts.newId(), { task_id: id, title: sub.title.slice(0, 500), is_completed: sub.done, sort_order: i });
+      }
+      await tx.write('calendar_links', externalLinkId(id, input.listId), {
+        task_id: id, provider: input.provider, calendar_id: input.listId, event_id: input.googleId, last_synced_at: this.now().toISOString(),
+      });
+    });
+    return id;
+  }
+
+  /** The project with this name (any letter case), or a new one. */
+  async projectNamed(name: string): Promise<string> {
+    const wanted = name.trim().toLowerCase();
+    const found = (await this.store.rows('projects')).find((p) => String(p.name ?? '').trim().toLowerCase() === wanted);
+    if (found) return found.id;
+    return (await this.createProject({ name: name.trim().slice(0, 100) || 'Google Tasks' })).id;
+  }
+
+  /** A file uploaded to Google Drive, attached to a task as a Drive link. */
+  async addDriveFile(taskId: string, file: { url: string; name: string; mimeType: string | null; size: number | null }): Promise<UndoLog> {
+    const { undo } = await this.store.transaction(async (tx) => {
+      await this.task(tx, taskId);
+      await tx.write('attachments', this.opts.newId(), {
+        task_id: taskId, kind: 'drive', file_url: file.url, file_name: file.name.slice(0, 500), mime_type: file.mimeType, size_bytes: file.size,
+      });
     });
     return undo;
   }

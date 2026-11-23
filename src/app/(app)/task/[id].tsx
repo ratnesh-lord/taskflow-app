@@ -14,7 +14,8 @@ import { RepeatSheet } from '@/components/RepeatSheet';
 import { TagSheet } from '@/components/TagSheet';
 import { PriorityMark } from '@/components/TaskRow';
 import type { TaskFields } from '@/data/actions';
-import { useData, useRun } from '@/state/data';
+import { useData, useNotice, useRun } from '@/state/data';
+import { useGoogle } from '@/state/google';
 import { useNow } from '@/state/now';
 import { useTheme } from '@/state/theme';
 import { BackHeader } from '@/ui/BackHeader';
@@ -42,6 +43,9 @@ export default function TaskScreen() {
   const { now } = useNow();
   const { colors } = useTheme();
   const run = useRun();
+  const google = useGoogle();
+  const { notify } = useNotice();
+  const [uploading, setUploading] = useState(false);
   const router = useRouter();
   const [sheet, setSheet] = useState<SheetName>(null);
   const [subtask, setSubtask] = useState('');
@@ -274,6 +278,27 @@ export default function TaskScreen() {
               style={[typography.small, { flex: 1, color: colors.text, minHeight: TOUCH }]}
             />
           </View>
+          {google.available ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Attach a file from this device, stored in Google Drive"
+              disabled={uploading}
+              onPress={() => {
+                setUploading(true);
+                void run(() => google.attachFile(id)).then((r) => {
+                  setUploading(false);
+                  if (r) notify(`Uploaded to Google Drive and attached: ${r.name}`);
+                });
+              }}
+              style={[styles.subRow, { borderBottomColor: colors.divider, opacity: uploading ? 0.5 : 1 }]}>
+              <View style={styles.iconHit}>
+                <Icon name="link" color={colors.textSecondary} size={18} />
+              </View>
+              <Text variant="small" color="textSecondary" style={{ flex: 1 }}>
+                {uploading ? 'Uploading to Google Drive…' : 'Attach a file (stored in your Google Drive)'}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
 

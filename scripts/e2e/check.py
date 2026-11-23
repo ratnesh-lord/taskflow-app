@@ -509,6 +509,13 @@ with sync_playwright() as p:
     assert_square(page, "the Reminders page")
     button(page, "Back").click()
 
+    # ---- Google (Phase 7): this build has no web client id, so the page says so ---------------
+    button(page, "Google Calendar, Tasks and Drive").click()
+    expect(page.get_by_role("heading", name="Google", exact=True).filter(visible=True)).to_be_visible()
+    expect(page.get_by_text(re.compile(r"^Google is not set up for the web version of this build")).filter(visible=True)).to_be_visible()
+    ok("without a Google client id the Google page explains it is not set up, instead of offering buttons that fail")
+    button(page, "Back").click()
+
     # ---- export and restore -----------------------------------------------------------------
     open_tab(page, "More")
     with page.expect_download() as download_info:
