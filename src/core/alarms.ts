@@ -13,7 +13,9 @@ import {
   addDays, compareDates, formatTime, type LocalDate, type LocalTime, minutesToTime, type Now, shortDate, timeToMinutes,
 } from './dates';
 import { compareItems, itemOf, type ReminderRecord, type Snapshot, type TaskItem, seriesOf } from './agenda';
-import { titleWithEmoji } from './appearance';
+import { emojiOf, titleWithEmoji } from './appearance';
+import { type FocusRecord, isRunning, plannedEndMs } from './focus';
+import { type HabitLogRecord, type HabitRecord, reminderDays } from './habits';
 import { type Occurrence, projectedOccurrences } from './recurrence';
 import { isOpenStatus } from './types';
 
@@ -21,7 +23,7 @@ export type AlarmItem = { taskId: string; occurrenceDate: LocalDate | null; titl
 
 export type PlannedAlarm = {
   key: string;
-  kind: 'reminder' | 'morning' | 'evening';
+  kind: 'reminder' | 'morning' | 'evening' | 'habit' | 'focus';
   /** Wall-clock time in the phone's zone, "YYYY-MM-DDTHH:MM". */
   local?: string;
   /** A fixed instant (ms since 1970), for reminders set for an exact moment. */
@@ -86,10 +88,19 @@ export type PlanOptions = {
   summaries: SummarySettings;
   hour12: boolean;
   projectName?: (id: string) => string | undefined;
+  /** This device's id: only the device that started a focus session rings at its end. */
+  deviceId?: string;
+};
+
+/** Habits and focus sessions, when the plan should include them. */
+export type ProductivityData = {
+  habits?: readonly HabitRecord[];
+  habitLogs?: ReadonlyMap<string, readonly HabitLogRecord[]>;
+  focusSessions?: readonly FocusRecord[];
 };
 
 /** Every notification still to come in the next 30 days, soonest first (at most 500). */
-export function planAlarms(data: Snapshot & { reminders: readonly ReminderRecord[] }, opts: PlanOptions): PlannedAlarm[] {
+export function planAlarms(data: Snapshot & { reminders: readonly ReminderRecord[] } & ProductivityData, opts: PlanOptions): PlannedAlarm[] {
   const { now, hour12 } = opts;
   const today = now.date;
   const end = addDays(today, HORIZON_DAYS);
@@ -178,7 +189,7 @@ export function planAlarms(data: Snapshot & { reminders: readonly ReminderRecord
           if (list.length) {
             out.push({
               key: `m:${day}`, kind: 'morning', local, channel: 'summaries', title: '{n} tasks for today', titleOne: '1 task for today',
-              body: '', items: list, link: 'taskflow://',
+              body: '', items: list, link: 'taskflow://plan',
             });
           }
         }
@@ -193,6 +204,31 @@ export function planAlarms(data: Snapshot & { reminders: readonly ReminderRecord
         }
       }
     }
+  }
+
+  // Habit reminders, on each day the habit still needs doing.
+  for (const habit of data.habits ?? []) {
+    if (!habit.reminderTime) continue;
+    const emoji = emojiOf(habit.icon);
+    const title = emoji ? `${emoji} ${habit.title}` : habit.title;
+    const body = habit.target > 1 ? `Today's target: ${habit.target}${habit.unit ? ` ${habit.unit}` : ''}` : 'Time for this habit';
+    for (const day of reminderDays(habit, data.habitLogs?.get(habit.id) ?? [], today, HORIZON_DAYS)) {
+      const local = `${day}T${habit.reminderTime}`;
+      if (local <= nowLocal) continue;
+      out.push({ key: `h:${habit.id}:${day}`, kind: 'habit', local, channel: 'reminders', title, body, link: 'taskflow://habits' });
+    }
+  }
+
+  // The end of a focus session started on this device.
+  for (const s of data.focusSessions ?? []) {
+    if (!opts.deviceId || s.deviceId !== opts.deviceId || !isRunning(s, opts.nowMs)) continue;
+    const task = s.taskId ? data.tasks.find((t) => t.id === s.taskId) : undefined;
+    out.push({
+      key: `f:${s.id}`, kind: 'focus', at: plannedEndMs(s), channel: 'reminders',
+      title: s.kind === 'focus' ? 'Focus session done' : 'Break over',
+      body: s.kind === 'focus' ? (task ? `${titleWithEmoji(task)}. Time for a break.` : 'Time for a break.') : 'Ready for the next session?',
+      link: 'taskflow://focus',
+    });
   }
 
   const sortKey = (a: PlannedAlarm) => a.local ?? wallClockOfMs(a.at ?? 0);

@@ -16,6 +16,7 @@ import type { DataSnapshot } from '@/data/snapshot';
 import { usesHour12 } from '@/ui/format';
 
 import { alarms, type AlarmStatus } from '../../modules/taskflow-alarms';
+import { getDeviceId } from './device';
 import { pushWidgets } from './widgets';
 
 export { type AlarmStatus } from '../../modules/taskflow-alarms';
@@ -61,7 +62,9 @@ export async function replan(data: DataSnapshot, takenAt: number): Promise<{ ala
     minutes: nowDate.getHours() * 60 + nowDate.getMinutes(),
   };
   const projects = new Map(data.projects.map((p) => [p.id, p.name]));
+  const deviceId = await getDeviceId().catch(() => undefined);
   const plan = planAlarms(data, {
+    deviceId,
     now,
     nowMs: nowDate.getTime(),
     summaries: readSummarySettings(data.profile?.settings ?? {}),
@@ -83,7 +86,7 @@ export async function replan(data: DataSnapshot, takenAt: number): Promise<{ ala
   const result = await alarms.setPlan(JSON.stringify({ version: 1, generatedAt: takenAt, alarms: plan, closedSnoozes: closed }));
 
   // Android 13 and later ask before showing any notification: ask when the first reminder is set.
-  if (!askedThisRun && plan.some((a) => a.kind === 'reminder')) {
+  if (!askedThisRun && plan.some((a) => a.kind === 'reminder' || a.kind === 'habit' || a.kind === 'focus')) {
     askedThisRun = true;
     const status = await alarms.status();
     if (!status.notifications) await alarms.requestNotificationPermission().catch(() => null);

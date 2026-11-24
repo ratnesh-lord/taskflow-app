@@ -5,9 +5,9 @@ Eight layers of automated checks run on every push (GitHub Actions, workflow **C
 | Layer | What it proves | Run it yourself |
 | --- | --- | --- |
 | Database tests | Access rules, merging, paging, purge, concurrency, on a real Postgres with the project's migrations; then the app's sync engine with two devices against those same functions | `npm run test:db` (after `npm ci`) |
-| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, cancelling snoozes of finished tasks, Mark completed from a notification, what the widgets show, widget colours matching the app's, the calendar views and drops, task colours (contrast) and pictures, Google Calendar, Tasks and Drive against an in-memory Google, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
+| Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, cancelling snoozes of finished tasks, Mark completed from a notification, what the widgets show, widget colours matching the app's, the calendar views and drops, task colours (contrast) and pictures, habits and streaks, the focus timer, the Eisenhower matrix, analytics and planning, Google Calendar, Tasks and Drive against an in-memory Google, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
 | Typecheck and lint | Types are sound; no rounded corner anywhere in the code | `npm run typecheck`, `npm run lint` |
-| Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, the calendar views and dragging tasks in them, colours and pictures (including a photo upload), sign out | `bash scripts/e2e/run.sh` |
+| Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, the calendar views and dragging tasks in them, colours and pictures (including a photo upload), Plan my day, habits, goals, the focus timer, the matrix, notes, the weekly review and analytics, sign out | `bash scripts/e2e/run.sh` |
 | App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
 | Alarm and widget rules | The Kotlin alarm runtime's time-zone, due, late and summary rules, and the widgets' day, tick, deadline and next-reminder rules, on an ordinary JVM | `bash modules/taskflow-alarms/test-kotlin.sh` (needs `kotlinc`) |
 | Android build | The app, including the Kotlin alarm runtime and widgets, compiles and packages into an installable APK | GitHub Actions only |
@@ -15,12 +15,13 @@ Eight layers of automated checks run on every push (GitHub Actions, workflow **C
 
 ## What the database tests cover
 
-`supabase/tests/` holds four SQL files and one shell script. They run against a throwaway database created from a small stand-in for Supabase's roles and `auth` schema (`support/supabase_shim.sql`) plus every migration.
+`supabase/tests/` holds five SQL files and one shell script. They run against a throwaway database created from a small stand-in for Supabase's roles and `auth` schema (`support/supabase_shim.sql`) plus every migration.
 
 - **`01_access.test.sql`** is scenario 12 of the brief. For every synced table it checks that user A sees none of user B's rows, cannot update them, cannot insert rows owned by B, cannot attach rows to B's tasks or projects, and cannot hard-delete anything. It checks a signed-out visitor can read nothing. It ends by comparing a checksum of all of B's rows before and after.
 - **`02_merge.test.sql`** is the database half of scenario 8. Two devices edit different fields (both survive), then the same field (the later edit wins, whichever arrives first, and the loser is kept in the history). It also covers deletes and restores, a phone with a wrong clock, invalid edits, a recurring occurrence completed on two devices, and the same tag created on two devices.
 - **`03_pull.test.sql`** pages through changes ten at a time and checks every row arrives exactly once, then covers incremental pulls, tombstones, the 90-day purge and the forced resync that follows it.
 - **`04_accounts.test.sql`** covers profile creation, device registration and account deletion.
+- **`05_productivity.test.sql`** covers Phase 8: goals and the tasks linked to them, habit schedules and targets, two phones logging a habit offline (both count), a day's note edited on two devices (merged field by field), focus sessions, and the purge of deleted habits and goals.
 - **`concurrency.sh`** runs two writers at the same moment and a reader between them, twice. It checks revisions are committed in order and the reader's cursor skips nothing.
 - **`src/data/sync.db.test.ts`** (run last, through Jest) gives two simulated devices their own SQLite databases and syncs them through `sync_push` and `sync_pull` in the same throwaway database, as the signed-in user. It covers the cases listed under Phase 4 in [PROGRESS.md](PROGRESS.md), and checks the app's tables match the server's exactly.
 
@@ -37,6 +38,25 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres npm run test:db
 It needs Chrome and `pip install playwright` in addition to the database requirements above. Screenshots are written to `/tmp/taskflow-e2e`.
 
 It does not cover Google sign-in, the real Supabase sign-in service or the real Realtime service; the phone checklist does.
+
+## Phone checklist for Phase 8
+
+First, merge the pull request and wait for **Apply database migrations** to turn green. Then install the new APK.
+
+- [ ] **More → Plan my day:** tap **Today** on a task without a date; it joins today's list. Write a note, tap **Done planning**; it says **Planned at …**.
+- [ ] Tomorrow morning, tap the morning summary notification. It opens Plan my day.
+- [ ] **More → Habits → New habit:** "Drink water", 💧, 8 times a day, unit "glasses", reminder 2 minutes from now. Tap **+1** twice: "2 of 8 glasses". Tap **−**: "1 of 8 glasses".
+- [ ] Close the app. The habit reminder rings at its time, with 💧 in the title. Tapping it opens Habits.
+- [ ] **More → Focus timer:** choose a task, **15**, **Start**. The clock counts down. Close the app completely. At the end the phone rings with "Focus session done".
+- [ ] Start another session and tap **Stop** after a minute. The list says "stopped after 1 min".
+- [ ] **More → Goals → New goal**, then **Link existing tasks**. Complete the linked task; the goal shows 100%.
+- [ ] On any task, the **Goal** row links it to a goal.
+- [ ] **More → Eisenhower matrix:** **Move** a low-priority task to **Do now**. It becomes high priority and due today. **Undo** puts it back.
+- [ ] **More → Notes:** today's note from Plan my day is there.
+- [ ] **More → Weekly review:** the numbers look right for your week. Write a note and tap **Done reviewing**.
+- [ ] **More → Analytics:** switch between 7 and 30 days, and tap a bar to see its number.
+- [ ] Tap the **Productivity** widget. It opens Analytics.
+- [ ] On the computer, the habit, goal, notes and focus session all appear after sync.
 
 ## Phone checklist for colours and pictures
 

@@ -5,6 +5,9 @@
  */
 import type { ReminderRecord, TaskRecord } from '@/core/agenda';
 import { normaliseTime } from '@/core/dates';
+import type { FocusRecord } from '@/core/focus';
+import type { GoalRecord } from '@/core/goals';
+import type { HabitLogRecord, HabitRecord } from '@/core/habits';
 import { readFilter, type TaskFilter } from '@/core/filters';
 import type { OccurrenceRecord } from '@/core/recurrence';
 import type { Priority, TaskStatus } from '@/core/types';
@@ -29,6 +32,8 @@ export type LinkRecord = { id: string; taskId: string; url: string; name: string
 export type ExternalLinkRecord = { id: string; taskId: string; provider: string; listId: string; externalId: string };
 export type SavedFilterRecord = { id: string; name: string; filter: TaskFilter; sortOrder: number };
 export type OccurrenceRow = OccurrenceRecord & { id: string; taskId: string };
+/** A day's note ("day") or a week's review ("week", dated by its Monday). */
+export type NoteRecord = { id: string; kind: 'day' | 'week'; date: string; body: string; plannedAt: string | null; updatedAt: string };
 
 export type DataSnapshot = {
   tasks: TaskRecord[];
@@ -43,6 +48,15 @@ export type DataSnapshot = {
   links: Map<string, LinkRecord[]>;
   externalLinks: ExternalLinkRecord[];
   savedFilters: SavedFilterRecord[];
+  goals: GoalRecord[];
+  /** Live habits, active and archived. */
+  habits: HabitRecord[];
+  /** Logs per habit id (live habits only). */
+  habitLogs: Map<string, HabitLogRecord[]>;
+  /** Notes by "<kind>:<date>", e.g. "day:2026-11-25". */
+  notes: Map<string, NoteRecord>;
+  /** Newest first. */
+  focusSessions: FocusRecord[];
   /** Edits waiting to be sent to the server. */
   pendingEdits: number;
   /** The account's profile, once it has arrived from the server. */
@@ -71,6 +85,7 @@ export function toTask(r: Row): TaskRecord {
     rrule: strOrNull(r.rrule),
     recurUntil: strOrNull(r.recur_until),
     icon: strOrNull(r.icon),
+    goalId: strOrNull(r.goal_id),
     sortOrder: num(r.sort_order),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
@@ -87,7 +102,24 @@ function group<T extends { taskId: string }>(items: T[]): Map<string, T[]> {
   return out;
 }
 
+function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const item of items) {
+    const list = out.get(key(item)) ?? [];
+    list.push(item);
+    out.set(key(item), list);
+  }
+  return out;
+}
+
 export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
+  const [goals, habits, habitLogs, notes, sessions] = await Promise.all([
+    store.rows('goals'),
+    store.rows('habits'),
+    store.rows('habit_logs'),
+    store.rows('daily_notes'),
+    store.rows('focus_sessions'),
+  ]);
   const [tasks, occurrences, projects, categories, tags, taskTags, subtasks, reminders, attachments, filters, pending, external] = await Promise.all([
     store.rows('tasks'),
     store.rows('task_occurrences'),
@@ -105,6 +137,8 @@ export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
   const [profileRow] = await store.rows('profiles');
 
   const liveTasks = new Set(tasks.map((t) => t.id));
+  const liveGoals = new Set(goals.map((g) => g.id));
+  const liveHabits = new Set(habits.map((h) => h.id));
   const liveTags = new Set(tags.map((t) => t.id));
   const ofLiveTask = (r: Row) => liveTasks.has(str(r.task_id));
 
@@ -117,7 +151,7 @@ export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
   }
 
   return {
-    tasks: tasks.map(toTask),
+    tasks: tasks.map(toTask).map((t) => (t.goalId && !liveGoals.has(t.goalId) ? { ...t, goalId: null } : t)),
     occurrences: group(
       occurrences.filter(ofLiveTask).map((r) => ({
         id: r.id,
@@ -165,6 +199,36 @@ export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
     savedFilters: filters
       .map((r) => ({ id: r.id, name: str(r.name), filter: readFilter(r.query), sortOrder: num(r.sort_order) }))
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+    goals: goals.map((r) => ({
+      id: r.id, title: str(r.title), description: str(r.description), targetDate: strOrNull(r.target_date),
+      status: (r.status === 'achieved' || r.status === 'dropped' ? r.status : 'active') as GoalRecord['status'],
+      color: strOrNull(r.color), icon: strOrNull(r.icon), sortOrder: num(r.sort_order), createdAt: str(r.created_at),
+    })),
+    habits: habits
+      .map((r) => ({
+        id: r.id, title: str(r.title), icon: strOrNull(r.icon), color: strOrNull(r.color), schedule: str(r.schedule) || 'daily',
+        target: Math.max(1, num(r.target)), unit: str(r.unit), reminderTime: normaliseTime(strOrNull(r.reminder_time)),
+        status: (r.status === 'archived' ? 'archived' : 'active') as HabitRecord['status'], sortOrder: num(r.sort_order), createdAt: str(r.created_at),
+      }))
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)),
+    habitLogs: groupBy(
+      habitLogs.filter((r) => liveHabits.has(str(r.habit_id))).map((r) => ({
+        id: r.id, habitId: str(r.habit_id), date: str(r.log_date), amount: Math.max(1, num(r.amount)), loggedAt: str(r.logged_at) || str(r.created_at),
+      })),
+      (l) => l.habitId,
+    ),
+    notes: new Map(
+      notes.map((r) => {
+        const kind = r.kind === 'week' ? 'week' : 'day';
+        return [`${kind}:${str(r.note_date)}`, { id: r.id, kind, date: str(r.note_date), body: str(r.body), plannedAt: strOrNull(r.planned_at), updatedAt: str(r.updated_at) }];
+      }),
+    ),
+    focusSessions: sessions
+      .map((r) => ({
+        id: r.id, taskId: liveTasks.has(str(r.task_id)) ? str(r.task_id) : null, kind: (r.kind === 'break' ? 'break' : 'focus') as FocusRecord['kind'],
+        startedAt: str(r.started_at), plannedMinutes: Math.max(1, num(r.planned_minutes)), endedAt: strOrNull(r.ended_at), deviceId: strOrNull(r.device_id),
+      }))
+      .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1)),
     pendingEdits: pending,
     profile: profileRow
       ? {

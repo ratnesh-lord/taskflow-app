@@ -480,6 +480,153 @@ with sync_playwright() as p:
     expect(page.get_by_text(re.compile(r"^Synced with your account at ")).filter(visible=True)).to_be_visible()
     ok("More says every change has been synced with the account")
 
+    # ---- Phase 8: plan my day, habits, goals, focus timer, matrix, notes, review, analytics ----
+    def more(label):
+        go("More")
+        role(page, "button", re.compile(rf"^{re.escape(label)}")).first.click()
+        expect(page.get_by_role("heading", name=label, exact=True).filter(visible=True)).to_be_visible()
+
+    go("Inbox")
+    quick_add("Book a dentist appointment !low")
+    button(page, "Add task").click()
+    notice("Added: Book a dentist appointment")
+
+    more("Plan my day")
+    expect(page.get_by_text(re.compile(r"^2 · Today · \d+$")).filter(visible=True).first).to_be_visible()
+    expect(page.get_by_text(re.compile(r"^3 · Add to today · \d+$")).filter(visible=True).first).to_be_visible()
+    role(page, "button", "Move Book a dentist appointment to today").first.click()
+    expect(page.get_by_text("Moved to today").filter(visible=True).first).to_be_visible()
+    field(page, "Note for today").fill("Revise IAM before lunch.")
+    button(page, "Done planning").click()
+    expect(page.get_by_text(re.compile(r"^Planned at ")).filter(visible=True).first).to_be_visible()
+    assert_square(page, "Plan my day")
+    ok("Plan my day: a task brought to today, a note for the day, and the day marked planned")
+    page.screenshot(path=f"{SHOTS}/30-plan-my-day.png", full_page=True)
+    button(page, "Back").click()
+
+    more("Habits")
+    button(page, "New habit").click()
+    field(page, "Habit").fill("Drink water")
+    role(page, "radio", "💧").first.click()
+    field(page, "Times a day").fill("3")
+    field(page, "Unit (optional)").fill("glasses")
+    role(page, "checkbox", "12:00").first.click()
+    button(page, "Create habit").click()
+    expect(page.get_by_text("0 of 3 glasses").filter(visible=True).first).to_be_visible()
+    button(page, "Add one to Drink water").click()
+    button(page, "Add one to Drink water").click()
+    expect(page.get_by_text("2 of 3 glasses").filter(visible=True).first).to_be_visible()
+    button(page, "Take back one for Drink water").click()
+    expect(page.get_by_text("1 of 3 glasses").filter(visible=True).first).to_be_visible()
+    button(page, "Add one to Drink water").click()
+    button(page, "Add one to Drink water").click()
+    expect(page.get_by_text("3 of 3 glasses").filter(visible=True).first).to_be_visible()
+    expect(page.get_by_text(re.compile(r"Streak 1 day")).filter(visible=True).first).to_be_visible()
+    button(page, "New habit").click()
+    field(page, "Habit").fill("Run")
+    role(page, "radio", "Days a week", exact=True).first.click()
+    role(page, "radio", "3", exact=True).first.click()
+    button(page, "Create habit").click()
+    expect(page.get_by_text(re.compile(r"^3 days a week · 0 of 3 days this week")).filter(visible=True).first).to_be_visible()
+    assert_square(page, "Habits")
+    ok("Habits: a daily target counted up and back, a streak, and an 'N days a week' habit")
+    page.screenshot(path=f"{SHOTS}/31-habits.png", full_page=True)
+    button(page, "Back").click()
+
+    more("Goals")
+    button(page, "New goal").click()
+    field(page, "Goal").fill("Pass the AWS exam")
+    button(page, "Create goal").click()
+    expect(page.get_by_role("heading", name="Goal", exact=True).filter(visible=True).first).to_be_visible()
+    role(page, "button", re.compile(r"^Link existing tasks")).first.click()
+    role(page, "button", re.compile(r"Complete AWS certification revision")).last.click()
+    expect(page.get_by_text("Linked to this goal").filter(visible=True).first).to_be_visible()
+    expect(page.get_by_text(re.compile(r"^0 of 1 task done")).filter(visible=True).first).to_be_visible()
+    assert_square(page, "a goal")
+    ok("Goals: a goal with an existing task linked to it, and its progress")
+    page.screenshot(path=f"{SHOTS}/32-goal.png", full_page=True)
+    button(page, "Back").click()
+    expect(page.get_by_text("1 active goal").filter(visible=True).first).to_be_visible()
+    button(page, "Back").click()
+
+    more("Focus timer")
+    role(page, "button", re.compile(r"^Task")).first.click()
+    role(page, "button", re.compile(r"Complete AWS certification revision")).last.click()
+    role(page, "radio", "15", exact=True).first.click()
+    button(page, "Start 15-minute focus").click()
+    timer = page.locator("[role=timer]").filter(visible=True).first
+    expect(timer).to_have_text(re.compile(r"^1[45]:\d\d$"))
+    first = timer.inner_text()
+    page.wait_for_timeout(2200)
+    assert timer.inner_text() != first, "the clock is not counting down"
+    ok(f"Focus timer: a 15-minute session on a task counts down ({first} → {timer.inner_text()})")
+    page.screenshot(path=f"{SHOTS}/33-focus-running.png")
+    button(page, "Stop").click()
+    expect(page.get_by_text(re.compile(r"^stopped after 0 min$")).filter(visible=True).first).to_be_visible()
+    assert_square(page, "the focus timer")
+    ok("stopping early records how long it ran")
+    button(page, "Back").click()
+
+    more("Eisenhower matrix")
+    for title in ["Do now", "Schedule", "Delegate", "Drop"]:
+        expect(page.get_by_role("heading", name=title, exact=True).filter(visible=True)).to_be_visible()
+    role(page, "button", "Move Book a dentist appointment to another box").first.click()
+    expect(role(page, "radio", re.compile(r"^Do now.*High priority$")).first).to_be_visible()
+    role(page, "radio", re.compile(r"^Do now")).first.click()
+    expect(page.get_by_text("Moved to Do now").filter(visible=True).first).to_be_visible()
+    assert_square(page, "the matrix")
+    ok("Eisenhower matrix: four boxes, and a task moved into Do now")
+    page.screenshot(path=f"{SHOTS}/34-matrix.png", full_page=True)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    top = lambda name: page.get_by_role("heading", name=name, exact=True).filter(visible=True).first.bounding_box()
+    page.wait_for_timeout(300)
+    assert abs(top("Do now")["y"] - top("Schedule")["y"]) < 2 and top("Schedule")["x"] > top("Do now")["x"] + 300, (top("Do now"), top("Schedule"))
+    ok("on a desktop-width window the matrix shows its boxes two by two")
+    page.screenshot(path=f"{SHOTS}/34b-matrix-desktop.png")
+    page.set_viewport_size({"width": 412, "height": 915})
+    button(page, "Back").click()
+
+    more("Notes")
+    expect(page.get_by_text("Revise IAM before lunch.").filter(visible=True).first).to_be_visible()
+    field(page, "Search notes").fill("nothing like this")
+    expect(page.get_by_text("No note matches.").filter(visible=True)).to_be_visible()
+    ok("Notes: today's note written in Plan my day is here, and search narrows the list")
+    button(page, "Back").click()
+
+    more("Weekly review")
+    expect(page.get_by_text(re.compile(r"^1 · Done · \d+$")).filter(visible=True).first).to_be_visible()
+    field(page, "Notes for the week").fill("Good progress on the exam.")
+    button(page, "Done reviewing").click()
+    expect(page.get_by_text(re.compile(r"^This week was reviewed on ")).filter(visible=True).first).to_be_visible()
+    assert_square(page, "the weekly review")
+    ok("Weekly review: the week's numbers, a note for the week, and the week marked reviewed")
+    page.screenshot(path=f"{SHOTS}/35-review.png", full_page=True)
+    button(page, "Back").click()
+
+    more("Analytics")
+    expect(page.get_by_label(re.compile(r"^Done today: \d+$")).filter(visible=True).first).to_be_visible()
+    bar = page.get_by_role("button", name=re.compile(r": \d+ tasks? done$")).filter(visible=True).last
+    bar.click()
+    expect(page.get_by_text(re.compile(r"^\w{3} \d+ \w{3}: \d+ tasks? done$")).filter(visible=True).first).to_be_visible()
+    role(page, "radio", "Last 30 days", exact=True).first.click()
+    expect(page.get_by_text(re.compile(r"^Streak 1 day · Best 1 day")).filter(visible=True).first).to_be_visible()
+    assert_square(page, "Analytics")
+    ok("Analytics: counts, a bar that shows its value when tapped, 30 days, and the habit's streak")
+    page.screenshot(path=f"{SHOTS}/36-analytics.png", full_page=True)
+    button(page, "Back").click()
+
+    # Everything above reached the database.
+    expect(page.get_by_text("Every change on this device has been sent.").filter(visible=True)).to_be_visible(timeout=15000)
+    assert db(f"select count(*) from public.habit_logs l join public.habits h on h.id = l.habit_id where h.title = 'Drink water' and l.deleted_at is null") == "3"
+    assert db("select schedule || ' ' || target || ' ' || unit || ' ' || reminder_time || ' ' || icon from public.habits where title = 'Drink water'") == "daily 3 glasses 12:00:00 e:💧"
+    assert db("select schedule from public.habits where title = 'Run'") == "week:3"
+    assert db("select count(*) from public.tasks t join public.goals g on g.id = t.goal_id where g.title = 'Pass the AWS exam' and t.title = 'Complete AWS certification revision'") == "1"
+    assert db(f"select body || '|' || (planned_at is not null) from public.daily_notes where kind = 'day' and note_date = '{today.isoformat()}'") == "Revise IAM before lunch.|true"
+    assert db("select count(*) from public.daily_notes where kind = 'week' and planned_at is not null and body = 'Good progress on the exam.'") == "1"
+    assert db("select planned_minutes || ' ' || (ended_at is not null) || ' ' || (task_id is not null) || ' ' || (device_id is not null) from public.focus_sessions") == "15 true true true"
+    assert db("select priority || ' ' || due_date from public.tasks where title = 'Book a dentist appointment'") == f"high {today.isoformat()}"
+    ok("the habits and their logs, the goal link, both notes, the focus session and the moves are in the database")
+
     # ---- sync (Phase 4): this browser's tasks are in the real database --------------------
     titles = db(f"select string_agg(title, '|' order by title) from public.tasks where user_id = '{user_id}' and deleted_at is null")
     for t in ["Complete AWS certification revision", "Water the plants", "Renew passport", "Read the networking chapter"]:

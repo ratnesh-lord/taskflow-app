@@ -31,7 +31,7 @@ export const TABLES = {
   tasks: {
     title: t(), description: t("''"), notes: t("''"), status: t("'inbox'"), priority: t("'medium'"),
     project_id: t(), category_id: t(), due_date: t(), due_time: t(), due_tz: t(), estimated_minutes: i(),
-    completed_at: t(), rrule: t(), recur_until: t(), sort_order: r('0'), icon: t(),
+    completed_at: t(), rrule: t(), recur_until: t(), sort_order: r('0'), icon: t(), goal_id: t(),
   },
   task_occurrences: {
     task_id: t(), occurrence_date: t(), status: t("'completed'"), completed_at: t(), moved_to_date: t(), moved_to_time: t(),
@@ -49,6 +49,16 @@ export const TABLES = {
   calendar_links: {
     task_id: t(), provider: t("'google'"), calendar_id: t(), event_id: t(), etag: t(), last_synced_at: t(),
   },
+  goals: {
+    title: t(), description: t("''"), target_date: t(), status: t("'active'"), color: t(), icon: t(), sort_order: r('0'),
+  },
+  habits: {
+    title: t(), icon: t(), color: t(), schedule: t("'daily'"), target: i('1'), unit: t("''"), reminder_time: t(),
+    status: t("'active'"), sort_order: r('0'),
+  },
+  habit_logs: { habit_id: t(), log_date: t(), amount: i('1'), logged_at: t() },
+  daily_notes: { note_date: t(), kind: t("'day'"), body: t("''"), planned_at: t() },
+  focus_sessions: { task_id: t(), kind: t("'focus'"), started_at: t(), planned_minutes: i(), ended_at: t(), device_id: t() },
 } satisfies Record<string, Columns>;
 
 /**
@@ -60,12 +70,16 @@ export const TABLES = {
 export const TIME_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   tasks: ['due_time'],
   task_occurrences: ['moved_to_time'],
+  habits: ['reminder_time'],
 };
 export const TIMESTAMP_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   tasks: ['completed_at'],
   task_occurrences: ['completed_at'],
   reminders: ['remind_at', 'snoozed_until'],
   calendar_links: ['last_synced_at'],
+  habit_logs: ['logged_at'],
+  daily_notes: ['planned_at'],
+  focus_sessions: ['started_at', 'ended_at'],
 };
 
 export type TableName = keyof typeof TABLES;
@@ -80,7 +94,7 @@ export function columnsOf(table: TableName): Columns {
  * them. The first migration leaves them out, so a new install and an
  * upgraded one end up the same.
  */
-const ADDED_LATER: Partial<Record<TableName, readonly string[]>> = { tasks: ['icon'] };
+const ADDED_LATER: Partial<Record<TableName, readonly string[]>> = { tasks: ['icon', 'goal_id'] };
 
 function columnSql(name: string, c: { type: ColumnType; default?: string }): string {
   const sqlType = c.type === 'int' || c.type === 'bool' ? 'INTEGER' : c.type === 'real' ? 'REAL' : 'TEXT';
@@ -132,6 +146,13 @@ export const LOCAL_MIGRATIONS: string[] = [
   ].join('\n'),
   // 2: a task's picture (emoji, clipart or photo), as on the server since migration 20261123000100.
   addColumn('tasks', 'icon'),
+  // 3: Phase 8 (server migration 20261125000100): goals, habits and their logs, daily notes, focus sessions.
+  [
+    addColumn('tasks', 'goal_id'),
+    ...(['goals', 'habits', 'habit_logs', 'daily_notes', 'focus_sessions'] as const).map(createTable),
+    'CREATE INDEX IF NOT EXISTS habit_logs_habit_idx ON habit_logs (habit_id, log_date);',
+    'CREATE INDEX IF NOT EXISTS tasks_goal_idx ON tasks (goal_id);',
+  ].join('\n'),
 ];
 
 /** JavaScript value → stored value. */

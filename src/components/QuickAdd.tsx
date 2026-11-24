@@ -21,7 +21,7 @@ import { Sheet } from '@/ui/Sheet';
 import { Text } from '@/ui/Text';
 import { space, typography } from '@/ui/tokens';
 
-type Defaults = Partial<Pick<TaskFields, 'projectId' | 'categoryId' | 'dueDate'>>;
+type Defaults = Partial<Pick<TaskFields, 'projectId' | 'categoryId' | 'dueDate' | 'goalId'>>;
 
 const QuickAddContext = createContext<(defaults?: Defaults) => void>(() => {});
 

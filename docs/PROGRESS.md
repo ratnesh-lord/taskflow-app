@@ -314,6 +314,91 @@ Updated at the end of each phase: what works, how it was checked, and what is le
 
 This change adds a column to the database (migration 6). Merging the pull request runs **Apply database migrations** automatically. Wait for it to turn green before installing the new APK. Otherwise the phone's edits wait, unsent, with a sync problem shown, until it does.
 
+## Phase 8: planning, review and productivity tools (code complete; needs a phone check)
+
+Everything is under **More → Plan and review**. The Today screen is unchanged, as the roadmap required.
+
+### What works
+
+- **Plan my day.** Four steps on one page:
+  1. Tasks overdue from earlier days, each with **Today** or **Move**.
+  2. Today's tasks, with the total of their time estimates.
+  3. Tasks to add to today: those without a date first (most important first), then the next seven days.
+  4. A note for the day.
+
+  **Done planning** marks the day as planned. The morning summary notification now opens this page.
+- **Weekly review.** The last seven days: what got done (with a chart per day), the share of what was due that got done, focus time, and what slipped (each with **Tomorrow** or **Move**). Then each goal's progress, each habit's days met, the next seven days, and notes for the week. **Done reviewing** marks the week as reviewed.
+- **Analytics.** Done today, this week (from Monday) and this month, and the overdue count. For the last 7 or 30 days:
+  - the completion rate, meaning the share of tasks due in the period that were done;
+  - charts of tasks completed and focus minutes per day (tap a bar for its number);
+  - the busiest weekday;
+  - tasks done by project and by priority;
+  - each habit's current and best streak.
+
+  The productivity widget now opens this page.
+- **Goals.** A goal has a name, a note, an optional target date, a picture and a status (Active, Achieved or Dropped). Tasks link to it from the goal's page (**Link existing tasks**, or **+** for a new task) or from the new **Goal** row on each task. Its progress is the share of linked tasks that are done. A goal past its date with tasks still open shows in red. Deleting a goal keeps its tasks.
+- **Habits.** A habit has a name, an emoji, a schedule and a target per day, such as "8 glasses". The schedule is every day, chosen weekdays, or "N days a week".
+  - Tap **+1** (or **Done**) each time you do it, and **−** to take one back. A day counts once it reaches the target.
+  - Each habit shows its last seven days as squares: full when done, half when partly done, red when missed, dashed on a rest day. It also shows its streak and how long ago it was last done.
+  - An optional reminder time rings on the Android app, on each day the habit still needs doing. It stops for the day once you reach the target, and for the week once an "N days a week" habit is met.
+  - Habits can be archived (history kept) or deleted (history removed).
+- **Focus timer.** Choose a task (optional) and a length (15, 25, 45, 60 or 90 minutes), then start. A long break is suggested after every fourth session.
+  - The clock counts down to the second. **Stop** ends a session early, and the time spent is recorded.
+  - When a session ends, the page offers the next break, and breaks of 5, 10, 15 or 30 minutes can be started at any time.
+  - **On Android**, the phone that started the session rings at the end, even with the app closed.
+  - **In a browser**, the open tab shows a notification at the end, if you allow notifications.
+  - Each task's page has **Focus on this task**.
+- **Notes.** One note per day. Move between days with the arrows or a date picker, and search all notes. The weekly review's notes are listed here too.
+- **Eisenhower matrix.** Open tasks are sorted into four boxes: Do now, Schedule, Delegate and Drop.
+  - **Urgent** means overdue or due within two days. **Important** means critical or high priority.
+  - **Move** sends a task to another box and says what will change. Moving into Important makes it high priority, and out of it makes it medium. Moving into Urgent makes it due today, and out of it due in a week.
+  - Each move can be undone.
+  - On a wide screen the boxes sit two by two.
+- **Everything syncs.** Goals, habits, notes and focus sessions sync between devices and are included in export and restore, like tasks.
+
+### How it was checked
+
+- **Rules** (46 new tests in `src/core`):
+  - Habits (19): schedules match exactly what the database accepts; done, partly done, missed and rest days; days before a habit was created are not counted as missed; streaks over days and over weeks; completion rates; reminder days; "time since".
+  - Focus timer (8): running and finished sessions without any further write; stopping early; the clock; breaks; totals.
+  - Matrix (4): the boxes, repeating tasks, and what each move changes.
+  - Analytics (7): done counts, the completion rate, including repeats that were skipped or moved, and the per-project, per-priority and per-weekday figures.
+  - Planning, review and goals (4).
+  - Notifications (4): habit reminders, the focus end on the right phone only, and the morning summary opening Plan my day.
+
+  Two of these rules were broken on purpose to confirm the tests catch it; they did.
+- **Device database** (11 new tests): goals with Undo, habit logs adding up and being taken back, notes keeping one row per day, starting a session stopping the previous one, a matrix move undone in one step, and a backup that brings back a deleted goal, habit and its logs, and a note.
+- **Server database** (new `05_productivity.test.sql`, plus additions to the access test):
+  - each new table is private to its owner, and A cannot link to B's goal, log B's habit or time B's task;
+  - two phones logging the same habit offline both count;
+  - one day's note edited on two devices merges field by field;
+  - schedules, targets and session lengths are checked;
+  - the 90-day purge removes a deleted habit's logs and unlinks a deleted goal's tasks.
+- **In Chrome** (102 checks, 18 new): a person's run through every new page, ending with a check that everything reached the database. Screenshots of each page were checked by eye, which found and fixed three things: days before a habit existed showing as missed, cut-off dates under the 30-day chart, and a "no sessions" message shown after a short session.
+- **Android:** the APK build and emulator check run in CI.
+
+### Not yet proven
+
+- **On the phone:**
+  - The focus timer ringing with the app closed.
+  - Habit reminders.
+  - The morning summary and the productivity widget opening their new pages.
+  - The layout of the new pages on a real screen.
+- **Habits cannot be ticked from a notification.** Tapping a habit reminder opens Habits.
+- **A focus session started in a browser** rings only while that tab is open; no phone rings for it.
+- **The matrix moves tasks with Move, not by dragging** between boxes.
+
+### Decisions in this phase
+
+- **One row per habit log, not a count per day.** Two devices adding glasses of water offline would otherwise overwrite each other's count. With one row each, they simply add up.
+- **Notes are keyed by account and date.** Every device works out the same id for a day's note, so a note started offline on two devices becomes one note.
+- **A focus session needs no write to finish.** Its end is worked out from its start and length. A phone that is off or offline at the end still records the session correctly, and the alarm plan knows when to ring.
+- **The matrix stores nothing of its own.** Urgency and importance come from each task's date and priority, so a task's box is always consistent with what the rest of the app shows.
+
+### Before installing
+
+This phase adds five tables and one task field to the database (migration 7). Merging the pull request runs **Apply database migrations** automatically. Wait for it to turn green before installing the new APK.
+
 ## Remaining work
 
 - [x] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
@@ -323,14 +408,16 @@ This change adds a column to the database (migration 6). Merging the pull reques
 - [ ] Wake-up push through Firebase (needs your Firebase project; see Phase 5 decisions)
 - [x] Phase 6: four home-screen widgets, ticking tasks from the widget, quick add from the widget
 - [x] Phase 7: calendar views, drag to reschedule, Google Calendar, Drive and Tasks
-- [ ] Phase 8: analytics, daily planning, weekly review, goals, habits, focus timer, notes, Eisenhower matrix
+- [x] Phase 8: analytics, daily planning, weekly review, goals, habits, focus timer, notes, Eisenhower matrix
 - [ ] Phase 9: all twelve scenarios on the phone, performance and battery review, desktop layout polish
 - [ ] Phase 10: release signing key, web deployment, final documentation
 
 Smaller items carried forward:
 
 - [ ] Drag to reorder tasks within a list (the order is stored; there is no drag handle yet)
-- [ ] Colours for projects and categories (stored; no picker yet)
+- [ ] Colours for categories (stored; no picker yet; projects have one since the colours change)
+- [ ] Tick a habit from its reminder notification
+- [ ] Drag tasks between boxes of the Eisenhower matrix (Move works today)
 
 - [ ] Account deletion from inside the app (the database already cascades; the server function and the Settings screen are not written)
 - [ ] Attachment uploads (the storage bucket and its policies exist)

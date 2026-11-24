@@ -429,7 +429,7 @@ object WidgetRender {
     val week = day.week.sum()
     v.setContentDescription(R.id.tf_bars, "Tasks completed each day this week, $week so far")
     text(v, c, R.id.tf_line2, if (week == 1) "1 done this week" else "$week done this week", WidgetTokens.CAPTION) { it.textSecondary }
-    v.setOnClickPendingIntent(R.id.tf_root, openApp(context, "taskflow://completed", 7030))
+    v.setOnClickPendingIntent(R.id.tf_root, openApp(context, "taskflow://analytics", 7030))
     return v
   }
 

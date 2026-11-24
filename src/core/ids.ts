@@ -105,3 +105,8 @@ export function occurrenceId(taskId: string, date: string): string {
 export function externalLinkId(taskId: string, listId: string): string {
   return uuidV5(`external:${taskId}:${listId}`, TASKFLOW_NAMESPACE);
 }
+
+/** A day's note ("day") or a week's review ("week", dated by its Monday): one per account and date, whichever device writes it. */
+export function noteId(userId: string, kind: 'day' | 'week', date: string): string {
+  return uuidV5(`note:${userId}:${kind}:${date}`, TASKFLOW_NAMESPACE);
+}

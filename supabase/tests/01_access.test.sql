@@ -9,6 +9,8 @@ declare
   b_category uuid := gen_random_uuid();
   b_tag uuid := gen_random_uuid();
   b_task uuid := gen_random_uuid();
+  b_goal uuid := gen_random_uuid();
+  b_habit uuid := gen_random_uuid();
   tables text[] := public.sync_tables();
   t text;
   n bigint;
@@ -29,6 +31,12 @@ begin
   insert into public.attachments (id, user_id, task_id, file_url) values (gen_random_uuid(), b, b_task, 'https://example.com/b');
   insert into public.saved_filters (id, user_id, name) values (gen_random_uuid(), b, 'B filter');
   insert into public.calendar_links (id, user_id, task_id, calendar_id, event_id) values (gen_random_uuid(), b, b_task, 'primary', 'evt');
+  insert into public.goals (id, user_id, title) values (b_goal, b, 'B goal');
+  update public.tasks set goal_id = b_goal where id = b_task;
+  insert into public.habits (id, user_id, title) values (b_habit, b, 'B habit');
+  insert into public.habit_logs (id, user_id, habit_id, log_date) values (gen_random_uuid(), b, b_habit, current_date);
+  insert into public.daily_notes (id, user_id, note_date, body) values (gen_random_uuid(), b, current_date, 'B private note');
+  insert into public.focus_sessions (id, user_id, task_id, started_at, planned_minutes) values (gen_random_uuid(), b, b_task, now(), 25);
   insert into public.devices (id, user_id, platform) values (gen_random_uuid(), b, 'android');
 
   select jsonb_object_agg(x.t, x.c) into before_b from (
@@ -60,6 +68,13 @@ begin
   perform test.throws(format('insert into public.tasks (id, title, project_id) values (gen_random_uuid(), ''x'', %L)', b_project),
                       'foreign key', 'A cannot file a task under B''s project');
 
+  perform test.throws(format('insert into public.tasks (id, title, goal_id) values (gen_random_uuid(), ''x'', %L)', b_goal),
+                      'foreign key', 'A cannot link a task to B''s goal');
+  perform test.throws(format('insert into public.habit_logs (id, habit_id, log_date) values (gen_random_uuid(), %L, current_date)', b_habit),
+                      'foreign key', 'A cannot log B''s habit');
+  perform test.throws(format('insert into public.focus_sessions (id, task_id, started_at, planned_minutes) values (gen_random_uuid(), %L, now(), 25)', b_task),
+                      'foreign key', 'A cannot time a focus session on B''s task');
+
   select count(*) into n from public.devices;
   perform test.ok(n = 0, 'A sees none of B''s devices');
   select count(*) into n from public.change_history;
@@ -76,6 +91,7 @@ begin
   perform test.eq((select string_agg(k, ',' order by k) from jsonb_object_keys(res -> 'changes') k), 'profiles',
                   'A''s first pull contains only A''s profile');
   perform test.ok(res::text not like '%B secret task%', 'A''s pull does not contain B''s task');
+  perform test.ok(res::text not like '%B private note%', 'A''s pull does not contain B''s note');
 
   res := public.sync_push(dev_a, jsonb_build_array(
     test.op('tasks', b_task, '{"title": "hijacked"}', test.ts(0, dev_a))));
