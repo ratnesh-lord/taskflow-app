@@ -164,3 +164,44 @@ describe('emoji in notifications', () => {
     expect(morning?.items?.map((i) => i.title)).toEqual(["🎂 Mum's birthday"]);
   });
 });
+
+describe('habit reminders and the focus timer', () => {
+  const habit = {
+    id: 'h1', title: 'Drink water', icon: 'e:💧', color: null, schedule: 'daily', target: 8, unit: 'glasses', reminderTime: '11:00',
+    status: 'active' as const, sortOrder: 0, createdAt: '2026-11-01T00:00:00Z',
+  };
+  const base = { tasks: [] as ReturnType<typeof makeTask>[], occurrences: new Map(), reminders: [] as ReminderRecord[] };
+  const opts = { now, nowMs, summaries: off, hour12: false, deviceId: 'phone' };
+
+  it('a habit rings at its time on each day still to do, with its emoji, and opens Habits', () => {
+    const list = planAlarms({ ...base, habits: [habit], habitLogs: new Map() }, opts);
+    expect(list).toHaveLength(30);
+    expect(list[0]).toMatchObject({
+      key: 'h:h1:2026-11-20', kind: 'habit', local: '2026-11-20T11:00', title: '💧 Drink water',
+      body: "Today's target: 8 glasses", link: 'taskflow://habits', channel: 'reminders',
+    });
+    expect(list[0].actions).toBeUndefined();
+  });
+
+  it('not today once the target is reached, and not when the time has passed', () => {
+    const logs = new Map([['h1', [{ id: 'l', habitId: 'h1', date: '2026-11-20', amount: 8, loggedAt: '2026-11-20T08:00:00Z' }]]]);
+    expect(planAlarms({ ...base, habits: [habit], habitLogs: logs }, opts)[0].local).toBe('2026-11-21T11:00');
+    expect(planAlarms({ ...base, habits: [{ ...habit, reminderTime: '09:00' }], habitLogs: new Map() }, opts)[0].local).toBe('2026-11-21T09:00');
+  });
+
+  it('the end of a focus session rings only on the phone that started it, and only while it runs', () => {
+    const task = makeTask({ title: 'Write report', icon: 'e:📝' });
+    const running = { id: 's1', taskId: task.id, kind: 'focus' as const, startedAt: new Date(nowMs - 5 * 60_000).toISOString(), plannedMinutes: 25, endedAt: null, deviceId: 'phone' };
+    const [a] = planAlarms({ ...base, tasks: [task], focusSessions: [running] }, opts);
+    expect(a).toMatchObject({ key: 'f:s1', kind: 'focus', at: nowMs + 20 * 60_000, title: 'Focus session done', body: '📝 Write report. Time for a break.', link: 'taskflow://focus' });
+    expect(planAlarms({ ...base, tasks: [task], focusSessions: [{ ...running, deviceId: 'laptop' }] }, opts)).toEqual([]);
+    expect(planAlarms({ ...base, tasks: [task], focusSessions: [{ ...running, endedAt: new Date(nowMs).toISOString() }] }, opts)).toEqual([]);
+    expect(planAlarms({ ...base, focusSessions: [{ ...running, kind: 'break', taskId: null }] }, opts)[0]).toMatchObject({ title: 'Break over' });
+  });
+
+  it('the morning summary opens Plan my day', () => {
+    const t = makeTask({ dueDate: '2026-11-21' });
+    const list = planAlarms({ ...base, tasks: [t] }, { ...opts, summaries: { morning: '08:00', evening: null } });
+    expect(list[0]).toMatchObject({ kind: 'morning', link: 'taskflow://plan' });
+  });
+});

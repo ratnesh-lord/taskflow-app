@@ -28,7 +28,15 @@ export type IconName =
   | 'skip'
   | 'sort'
   | 'undo'
-  | 'flag';
+  | 'flag'
+  | 'chart'
+  | 'target'
+  | 'habit'
+  | 'timer'
+  | 'note'
+  | 'grid'
+  | 'sun'
+  | 'review';
 
 function shapes(name: IconName, color: string): ReactNode {
   switch (name) {
@@ -38,6 +46,55 @@ function shapes(name: IconName, color: string): ReactNode {
           <Rect x={4} y={5} width={16} height={15} />
           <Path d="M4 10h16" />
           <Rect x={10} y={13} width={4} height={4} fill={color} stroke="none" />
+        </>
+      );
+    case 'chart':
+      return <Path d="M4 20h16M6 20v-6M11 20V8M16 20v-9" />;
+    case 'target':
+      return (
+        <>
+          <Rect x={4} y={4} width={16} height={16} />
+          <Rect x={8} y={8} width={8} height={8} />
+          <Rect x={11} y={11} width={2} height={2} fill={color} stroke="none" />
+        </>
+      );
+    case 'habit':
+      return (
+        <>
+          <Rect x={4} y={4} width={6} height={6} fill={color} stroke="none" />
+          <Rect x={14} y={4} width={6} height={6} fill={color} stroke="none" />
+          <Rect x={4} y={14} width={6} height={6} fill={color} stroke="none" />
+          <Rect x={14} y={14} width={6} height={6} />
+        </>
+      );
+    case 'timer':
+      return (
+        <>
+          <Rect x={5} y={6} width={14} height={15} />
+          <Path d="M10 3h4M12 10v4h3" />
+        </>
+      );
+    case 'note':
+      return (
+        <>
+          <Path d="M5 4h14v16H5z" />
+          <Path d="M8 9h8M8 13h8M8 17h5" />
+        </>
+      );
+    case 'grid':
+      return <Path d="M4 4h16v16H4zM12 4v16M4 12h16" />;
+    case 'sun':
+      return (
+        <>
+          <Rect x={8} y={8} width={8} height={8} />
+          <Path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" />
+        </>
+      );
+    case 'review':
+      return (
+        <>
+          <Rect x={4} y={5} width={16} height={15} />
+          <Path d="M4 10h16M8 15l2 2 5-5" />
         </>
       );
     case 'inbox':

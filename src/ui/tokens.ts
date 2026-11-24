@@ -51,6 +51,8 @@ export const font = {
 } as const;
 
 export const typography = {
+  /** The focus timer's clock. */
+  display: { fontFamily: font.semibold, fontSize: 64, lineHeight: 72, letterSpacing: -1, fontVariant: ['tabular-nums'] },
   title: { fontFamily: font.semibold, fontSize: 28, lineHeight: 32, letterSpacing: -0.3 },
   heading: { fontFamily: font.semibold, fontSize: 20, lineHeight: 26 },
   body: { fontFamily: font.regular, fontSize: 16, lineHeight: 22 },

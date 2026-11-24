@@ -31,6 +31,8 @@ export type TaskRecord = {
   recurUntil: LocalDate | null;
   /** Its picture, if any (src/core/appearance.ts). */
   icon?: string | null;
+  /** The goal it counts towards, if any (src/core/goals.ts). */
+  goalId?: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

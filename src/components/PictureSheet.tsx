@@ -32,9 +32,9 @@ export function PictureSheet({
   onClose: () => void;
   /** The new picture (as stored), or null for none. */
   onPick: (icon: string | null) => void;
-  /** Choose and upload a photo. */
-  onPhoto: () => void;
-  photoBusy: boolean;
+  /** Choose and upload a photo. Without it, only emoji and clipart are offered. */
+  onPhoto?: () => void;
+  photoBusy?: boolean;
 }) {
   const { colors } = useTheme();
   const current = parseIcon(value);
@@ -56,7 +56,7 @@ export function PictureSheet({
       title="Picture"
       onClose={onClose}
       footer={current ? <Button variant="secondary" label="No picture" onPress={() => onPick(null)} /> : undefined}>
-      <Segmented label="Kind of picture" value={tab} options={TABS} onChange={setTab} />
+      <Segmented label="Kind of picture" value={tab} options={onPhoto ? TABS : TABS.filter((t) => t.value !== 'photo')} onChange={setTab} />
 
       {tab === 'emoji' ? (
         <>
@@ -115,7 +115,7 @@ export function PictureSheet({
             Choose a photo from this device. It is cropped square, made smaller, and kept in your private storage, so only you see it. Adding one needs a connection.
           </Text>
           <View style={{ alignItems: 'flex-start' }}>
-            <Button label={current?.kind === 'image' ? 'Choose another photo' : 'Choose a photo'} busy={photoBusy} busyLabel="Uploading…" onPress={onPhoto} />
+            <Button label={current?.kind === 'image' ? 'Choose another photo' : 'Choose a photo'} busy={photoBusy} busyLabel="Uploading…" onPress={() => onPhoto?.()} />
           </View>
         </View>
       )}

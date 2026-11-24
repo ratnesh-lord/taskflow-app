@@ -8,6 +8,7 @@ import { widgetsOnDevice } from '@/platform/widgets';
 import { BackupPanel } from '@/components/BackupPanel';
 import { SyncPanel } from '@/components/SyncPanel';
 import { useData } from '@/state/data';
+import { useNow } from '@/state/now';
 import { useSession } from '@/state/session';
 import { type ThemePreference, useTheme } from '@/state/theme';
 import { Button } from '@/ui/Button';
@@ -35,6 +36,10 @@ export default function More() {
   const [confirming, setConfirming] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
+  const { now } = useNow();
+  const today = now.date;
+  const activeGoals = data.goals.filter((g) => g.status === 'active').length;
+  const activeHabits = data.habits.filter((h) => h.status === 'active').length;
   const name = typeof user?.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : '';
 
   async function leave() {
@@ -59,6 +64,20 @@ export default function More() {
         </Text>
         {name ? <Text variant="bodyStrong">{name}</Text> : null}
         <Text variant="body">{user?.email ?? 'Signed in'}</Text>
+      </View>
+
+      <View>
+        <Text variant="label" color="textSecondary" style={{ paddingBottom: space.xs }}>
+          Plan and review
+        </Text>
+        <MenuRow icon="sun" label="Plan my day" detail={data.notes.get(`day:${today}`)?.plannedAt ? 'Planned' : undefined} onPress={() => router.push('/plan')} />
+        <MenuRow icon="review" label="Weekly review" onPress={() => router.push('/review')} />
+        <MenuRow icon="chart" label="Analytics" onPress={() => router.push('/analytics')} />
+        <MenuRow icon="grid" label="Eisenhower matrix" onPress={() => router.push('/matrix')} />
+        <MenuRow icon="target" label="Goals" detail={activeGoals ? String(activeGoals) : undefined} onPress={() => router.push('/goals')} />
+        <MenuRow icon="habit" label="Habits" detail={activeHabits ? String(activeHabits) : undefined} onPress={() => router.push('/habits')} />
+        <MenuRow icon="timer" label="Focus timer" onPress={() => router.push('/focus')} />
+        <MenuRow icon="note" label="Notes" onPress={() => router.push('/notes')} />
       </View>
 
       <View>

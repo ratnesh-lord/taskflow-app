@@ -7,7 +7,12 @@ import type { SummarySettings } from '@/core/alarms';
 import { type LocalDate, type LocalTime, localDateOf, toMoment } from '@/core/dates';
 import { type ColorSettings, parseIcon, readColorSettings } from '@/core/appearance';
 import { readGoogleSettings, type GoogleSettings } from '@/core/google';
-import { externalLinkId, normaliseTagName, occurrenceId, tagId, taskTagId } from '@/core/ids';
+import { externalLinkId, noteId, normaliseTagName, occurrenceId, tagId, taskTagId } from '@/core/ids';
+import type { FocusKind } from '@/core/focus';
+import { MAX_MINUTES } from '@/core/focus';
+import type { GoalStatus } from '@/core/goals';
+import { isScheduleText, MAX_TARGET, MAX_UNIT } from '@/core/habits';
+import type { MatrixMove } from '@/core/matrix';
 import type { QuickAdd, ReminderDraft } from '@/core/quick-add';
 import { currentOccurrence, type OccurrenceRecord, planCompletion, planMove, planSkip } from '@/core/recurrence';
 import type { TaskFilter } from '@/core/filters';
@@ -35,6 +40,8 @@ export type TaskFields = {
   recurUntil: LocalDate | null;
   /** The task's picture (src/core/appearance.ts), or null for none. */
   icon: string | null;
+  /** The goal it counts towards, or null. */
+  goalId: string | null;
 };
 
 export type TaskInput = Partial<TaskFields> & {
@@ -44,6 +51,53 @@ export type TaskInput = Partial<TaskFields> & {
   reminders?: ReminderDraft[];
   links?: LinkInput[];
 };
+
+export type GoalInput = { title: string; description?: string; targetDate?: LocalDate | null; color?: string | null; icon?: string | null };
+
+export type HabitInput = {
+  title: string;
+  icon?: string | null;
+  color?: string | null;
+  /** "daily", "days:1,3,5" or "week:3" (src/core/habits.ts). */
+  schedule?: string;
+  target?: number;
+  unit?: string;
+  reminderTime?: LocalTime | null;
+};
+
+const HABIT_COLUMNS: Record<keyof HabitInput, string> = {
+  title: 'title', icon: 'icon', color: 'color', schedule: 'schedule', target: 'target', unit: 'unit', reminderTime: 'reminder_time',
+};
+
+function habitColumns(input: Partial<HabitInput>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined) continue;
+    const column = HABIT_COLUMNS[key as keyof HabitInput];
+    if (column) out[column] = value;
+  }
+  if (out.title !== undefined) {
+    out.title = String(out.title).trim();
+    if (!out.title) throw new InvalidInput('A habit needs a name.');
+    if ((out.title as string).length > 200) throw new InvalidInput('A habit name can be at most 200 characters.');
+  }
+  if (out.schedule !== undefined && !isScheduleText(String(out.schedule))) throw new InvalidInput('Choose when the habit is done.');
+  if (out.target !== undefined) {
+    const n = Number(out.target);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_TARGET) throw new InvalidInput(`The daily target is a whole number from 1 to ${MAX_TARGET}.`);
+  }
+  if (out.unit !== undefined) {
+    out.unit = String(out.unit).trim();
+    if ((out.unit as string).length > MAX_UNIT) throw new InvalidInput(`A unit can be at most ${MAX_UNIT} characters.`);
+  }
+  if (out.reminder_time !== undefined && out.reminder_time !== null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(out.reminder_time))) {
+    throw new InvalidInput('Choose a time for the reminder.');
+  }
+  if (out.icon != null && !parseIcon(String(out.icon))) throw new InvalidInput('That picture cannot be used: choose an emoji or a clipart.');
+  return out;
+}
+
+export const MAX_NOTE = 20000;
 
 export type ProjectInput = { name: string; description?: string; color?: string | null; deadline?: LocalDate | null };
 
@@ -61,6 +115,7 @@ const FIELD_COLUMNS: Record<keyof TaskFields, string> = {
   rrule: 'rrule',
   recurUntil: 'recur_until',
   icon: 'icon',
+  goalId: 'goal_id',
 };
 
 /** Children that go with a task when it is deleted or duplicated. */
@@ -465,6 +520,197 @@ export class Actions {
   async updateTasks(taskIds: string[], fields: Partial<TaskFields>): Promise<UndoLog> {
     const { undo } = await this.store.transaction(async (tx) => {
       for (const id of taskIds) await this.patchTask(tx, id, fields);
+    });
+    return undo;
+  }
+
+
+  // ---------------------------------------------------------------------------
+  // Goals
+  // ---------------------------------------------------------------------------
+
+  async createGoal(input: GoalInput): Promise<{ id: string; undo: UndoLog }> {
+    const title = input.title.trim();
+    if (!title) throw new InvalidInput('A goal needs a name.');
+    if (title.length > 200) throw new InvalidInput('A goal name can be at most 200 characters.');
+    const id = this.opts.newId();
+    const { undo } = await this.store.transaction((tx) =>
+      tx.write('goals', id, {
+        title, description: input.description ?? '', target_date: input.targetDate ?? null, color: input.color ?? null,
+        icon: input.icon ?? null, status: 'active', sort_order: this.now().getTime(),
+      }),
+    );
+    return { id, undo };
+  }
+
+  async updateGoal(id: string, input: Partial<GoalInput> & { status?: GoalStatus }): Promise<UndoLog> {
+    const patch: Record<string, unknown> = {};
+    if (input.title !== undefined) {
+      const title = input.title.trim();
+      if (!title) throw new InvalidInput('A goal needs a name.');
+      if (title.length > 200) throw new InvalidInput('A goal name can be at most 200 characters.');
+      patch.title = title;
+    }
+    if (input.description !== undefined) {
+      if (input.description.length > 5000) throw new InvalidInput('A description can be at most 5,000 characters.');
+      patch.description = input.description;
+    }
+    if (input.targetDate !== undefined) patch.target_date = input.targetDate;
+    if (input.color !== undefined) patch.color = input.color;
+    if (input.icon !== undefined) {
+      if (input.icon != null && !parseIcon(input.icon)) throw new InvalidInput('That picture cannot be used.');
+      patch.icon = input.icon;
+    }
+    if (input.status !== undefined) patch.status = input.status;
+    return (await this.store.transaction(async (tx) => {
+      const row = await tx.get('goals', id);
+      if (!row || row.deleted_at) throw new InvalidInput('That goal no longer exists.');
+      await tx.write('goals', id, patch);
+    })).undo;
+  }
+
+  /** Delete a goal. Its tasks stay; they just stop counting towards it. */
+  async deleteGoal(id: string): Promise<UndoLog> {
+    return (await this.store.transaction(async (tx) => {
+      for (const task of await tx.find('tasks', 'goal_id', id)) await tx.write('tasks', task.id, { goal_id: null });
+      await tx.remove('goals', id);
+    })).undo;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Habits
+  // ---------------------------------------------------------------------------
+
+  async createHabit(input: HabitInput): Promise<{ id: string; undo: UndoLog }> {
+    const columns = habitColumns({ schedule: 'daily', target: 1, unit: '', ...input });
+    const id = this.opts.newId();
+    const { undo } = await this.store.transaction((tx) => tx.write('habits', id, { ...columns, status: 'active', sort_order: this.now().getTime() }));
+    return { id, undo };
+  }
+
+  async updateHabit(id: string, input: Partial<HabitInput> & { status?: 'active' | 'archived' }): Promise<UndoLog> {
+    const { status, ...rest } = input;
+    const columns = habitColumns(rest);
+    if (status !== undefined) columns.status = status;
+    return (await this.store.transaction(async (tx) => {
+      const row = await tx.get('habits', id);
+      if (!row || row.deleted_at) throw new InvalidInput('That habit no longer exists.');
+      await tx.write('habits', id, columns);
+    })).undo;
+  }
+
+  /** Delete a habit and its history. */
+  async deleteHabit(id: string): Promise<UndoLog> {
+    return (await this.store.transaction(async (tx) => {
+      for (const log of await tx.find('habit_logs', 'habit_id', id)) await tx.remove('habit_logs', log.id);
+      await tx.remove('habits', id);
+    })).undo;
+  }
+
+  /** Record doing a habit (amount times) on a day. Each log is its own row, so logs from two devices add up. */
+  async logHabit(habitId: string, date: LocalDate, amount = 1): Promise<UndoLog> {
+    if (!Number.isInteger(amount) || amount < 1 || amount > MAX_TARGET) throw new InvalidInput(`An amount is a whole number from 1 to ${MAX_TARGET}.`);
+    return (await this.store.transaction(async (tx) => {
+      const habit = await tx.get('habits', habitId);
+      if (!habit || habit.deleted_at) throw new InvalidInput('That habit no longer exists.');
+      await tx.write('habit_logs', this.opts.newId(), { habit_id: habitId, log_date: date, amount, logged_at: this.now().toISOString() });
+    })).undo;
+  }
+
+  /** Take back the most recent log of a habit on a day ("−"). Returns null when there is none. */
+  async unlogHabit(habitId: string, date: LocalDate): Promise<UndoLog | null> {
+    let found = false;
+    const { undo } = await this.store.transaction(async (tx) => {
+      const logs = (await tx.find('habit_logs', 'habit_id', habitId)).filter((l) => l.log_date === date);
+      const last = logs.sort((a, b) => String(b.logged_at).localeCompare(String(a.logged_at)))[0];
+      if (!last) return;
+      found = true;
+      await tx.remove('habit_logs', last.id);
+    });
+    return found ? undo : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Daily notes and weekly reviews
+  // ---------------------------------------------------------------------------
+
+  private async writeNote(tx: Tx, kind: 'day' | 'week', date: LocalDate, patch: Record<string, unknown>): Promise<void> {
+    const id = noteId(this.store.userId, kind, date);
+    const existing = await tx.get('daily_notes', id);
+    if (existing?.deleted_at) await tx.restore('daily_notes', id);
+    await tx.write('daily_notes', id, existing ? patch : { note_date: date, kind, body: '', ...patch });
+  }
+
+  async saveNote(kind: 'day' | 'week', date: LocalDate, body: string): Promise<UndoLog> {
+    if (body.length > MAX_NOTE) throw new InvalidInput('A note can be at most 20,000 characters.');
+    return (await this.store.transaction((tx) => this.writeNote(tx, kind, date, { body }))).undo;
+  }
+
+  /** Mark the day planned, or the week reviewed (null clears it). */
+  async setPlanned(kind: 'day' | 'week', date: LocalDate, planned: boolean): Promise<UndoLog> {
+    return (await this.store.transaction((tx) => this.writeNote(tx, kind, date, { planned_at: planned ? this.now().toISOString() : null }))).undo;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Focus timer
+  // ---------------------------------------------------------------------------
+
+  /** Start a focus session or a break. Anything still running is stopped first. */
+  async startFocus(input: { kind: FocusKind; minutes: number; taskId: string | null; deviceId: string }): Promise<{ id: string; undo: UndoLog }> {
+    if (!Number.isInteger(input.minutes) || input.minutes < 1 || input.minutes > MAX_MINUTES) {
+      throw new InvalidInput(`A session lasts from 1 to ${MAX_MINUTES} minutes.`);
+    }
+    const id = this.opts.newId();
+    const now = this.now();
+    const { undo } = await this.store.transaction(async (tx) => {
+      if (input.taskId) await this.task(tx, input.taskId);
+      const open = [...(await tx.find('focus_sessions', 'kind', 'focus')), ...(await tx.find('focus_sessions', 'kind', 'break'))];
+      for (const r of open) {
+        const end = Date.parse(String(r.started_at)) + Number(r.planned_minutes) * 60_000;
+        if (!r.ended_at && end > now.getTime()) await tx.write('focus_sessions', r.id, { ended_at: now.toISOString() });
+      }
+      await tx.write('focus_sessions', id, {
+        task_id: input.taskId, kind: input.kind, started_at: now.toISOString(), planned_minutes: input.minutes, device_id: input.deviceId,
+      });
+    });
+    return { id, undo };
+  }
+
+  /** Stop a running session now. */
+  async stopFocus(id: string): Promise<UndoLog> {
+    return (await this.store.transaction(async (tx) => {
+      const row = await tx.get('focus_sessions', id);
+      if (!row || row.deleted_at || row.ended_at) return;
+      await tx.write('focus_sessions', id, { ended_at: this.now().toISOString() });
+    })).undo;
+  }
+
+  async deleteFocus(id: string): Promise<UndoLog> {
+    return (await this.store.transaction((tx) => tx.remove('focus_sessions', id))).undo;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Eisenhower matrix
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Move a task to another box of the matrix: a new priority, a new date, or
+   * both, in one step that one Undo reverses. A repeating task's current
+   * occurrence (or the one named) moves; the series stays.
+   */
+  async applyMove(taskId: string, move: MatrixMove, occurrenceDate?: LocalDate): Promise<UndoLog> {
+    const { undo } = await this.store.transaction(async (tx) => {
+      const task = toTask(await this.task(tx, taskId));
+      if (move.priority) await this.patchTask(tx, taskId, { priority: move.priority });
+      if (move.date) {
+        const series = seriesOf(task);
+        if (series) {
+          const record = planMove(series, await this.records(tx, taskId), move.date, task.dueTime, occurrenceDate);
+          if (record) await this.writeOccurrence(tx, taskId, record);
+        } else {
+          await this.patchTask(tx, taskId, { dueDate: move.date });
+        }
+      }
     });
     return undo;
   }

@@ -37,7 +37,7 @@ import { Screen } from '@/ui/Screen';
 import { Text } from '@/ui/Text';
 import { space, TOUCH, typography } from '@/ui/tokens';
 
-type SheetName = 'due' | 'repeat' | 'reminders' | 'status' | 'priority' | 'project' | 'category' | 'tags' | 'estimate' | 'picture' | null;
+type SheetName = 'due' | 'repeat' | 'reminders' | 'status' | 'priority' | 'project' | 'category' | 'tags' | 'estimate' | 'picture' | 'goal' | null;
 
 const NONE = '__none__';
 const ESTIMATES = [5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
@@ -103,6 +103,7 @@ export default function TaskScreen() {
         : [],
   );
   const project = data.projects.find((p) => p.id === task.projectId);
+  const goal = task.goalId ? data.goals.find((g) => g.id === task.goalId) : undefined;
   const category = data.categories.find((c) => c.id === task.categoryId);
   const history = records.filter((r) => r.status === 'completed').sort((a, b) => (a.date < b.date ? 1 : -1));
 
@@ -177,6 +178,7 @@ export default function TaskScreen() {
             </>
           ) : undefined}
         </FieldRow>
+        <FieldRow label="Goal" value={goal?.title} placeholder="None" onPress={() => setSheet('goal')} />
         <FieldRow label="Category" value={category?.name} placeholder="None" onPress={() => setSheet('category')} />
         <FieldRow label="Tags" value={tagNames.length ? tagNames.map((t) => `#${t}`).join(' ') : null} placeholder="None" onPress={() => setSheet('tags')} />
         <FieldRow label="Estimate" value={task.estimatedMinutes ? duration(task.estimatedMinutes) : null} placeholder="None" onPress={() => setSheet('estimate')} />
@@ -361,6 +363,7 @@ export default function TaskScreen() {
         {repeating && item.open ? (
           <MenuRow icon="skip" label="Skip this time" detail={item.occurrence ? shortDate(item.occurrence.date, now.date) : undefined} onPress={() => void run(() => actions.skipOccurrence(id), 'Skipped')} />
         ) : null}
+        {item.open ? <MenuRow icon="timer" label="Focus on this task" onPress={() => router.push(`/focus?task=${id}`)} /> : null}
         <MenuRow
           icon="copy"
           label="Duplicate"
@@ -496,6 +499,23 @@ export default function TaskScreen() {
         onPick={(value) => {
           close();
           update({ projectId: value === NONE ? null : value });
+        }}
+      />
+      <OptionSheet<string>
+        visible={sheet === 'goal'}
+        title="Goal"
+        value={task.goalId ?? NONE}
+        options={[{ value: NONE, label: 'No goal' }, ...data.goals.filter((g) => g.status === 'active' || g.id === task.goalId).map((g) => ({ value: g.id, label: g.title }))]}
+        createLabel="New goal"
+        onCreate={async (title) => {
+          close();
+          const created = await run(() => actions.createGoal({ title }));
+          if (created) update({ goalId: created.id });
+        }}
+        onClose={close}
+        onPick={(value) => {
+          close();
+          update({ goalId: value === NONE ? null : value });
         }}
       />
       <OptionSheet<string>
