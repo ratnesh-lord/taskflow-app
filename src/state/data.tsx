@@ -37,6 +37,8 @@ const IDLE_SYNC: SyncState = {
 
 /** A sync also runs this often while the app is open, in case a live update was missed. */
 const SAFETY_SYNC_MS = 5 * 60_000;
+/** Rows arriving from the server refresh the screens at most this often. */
+const SYNC_REFRESH_MS = 1500;
 
 type DataValue = {
   state: DataState;
@@ -155,11 +157,43 @@ export function DataProvider({ children }: { children: ReactNode }) {
         void publish(sched.current);
         const ask = (reason: SyncReason) => sched.request(reason);
 
-        unsubscribe = store.subscribe((origin) => {
-          void reload(actions);
-          if (origin === 'local') ask('local');
+        // Your own edits show at once. Rows arriving from the server (a first
+        // sync brings them a page at a time) refresh the screens at most every
+        // SYNC_REFRESH_MS, then once more when they stop.
+        let syncTimer: ReturnType<typeof setTimeout> | null = null;
+        let lastSyncReload = 0;
+        cleanups.push(() => {
+          if (syncTimer) clearTimeout(syncTimer);
         });
-        cleanups.push(watchAccount(userId, deviceId, () => ask('remote')));
+        unsubscribe = store.subscribe((origin) => {
+          if (origin === 'local') {
+            void reload(actions);
+            ask('local');
+            return;
+          }
+          if (syncTimer) return;
+          const wait = Math.max(0, lastSyncReload + SYNC_REFRESH_MS - Date.now());
+          syncTimer = setTimeout(() => {
+            syncTimer = null;
+            lastSyncReload = Date.now();
+            void reload(actions);
+          }, wait);
+        });
+        // Live updates while the app is on screen. In the background the
+        // connection is closed (its heartbeat would keep the radio awake); the
+        // sync on coming back to the front catches up.
+        let stopWatching: (() => void) | null = AppState.currentState === 'background' ? null : watchAccount(userId, deviceId, () => ask('remote'));
+        const watchState = AppState.addEventListener('change', (next) => {
+          if (next === 'active' && !stopWatching) stopWatching = watchAccount(userId, deviceId, () => ask('remote'));
+          if (next === 'background' && stopWatching) {
+            stopWatching();
+            stopWatching = null;
+          }
+        });
+        cleanups.push(() => {
+          watchState.remove();
+          stopWatching?.();
+        });
         const appState = AppState.addEventListener('change', (next) => {
           if (next === 'active') {
             ask('foreground');

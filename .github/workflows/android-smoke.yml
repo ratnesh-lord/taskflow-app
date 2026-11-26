@@ -4,7 +4,8 @@
 # app) and a screenshot are kept as an artifact named android-smoke.
 #
 # The phone build in ci.yml is ARM-only; this separate build exists only so
-# the very same release code can run on a CI emulator.
+# the very same release code can run on a CI emulator. It is signed with a
+# throwaway key, to prove release signing works without touching the real key.
 
 name: Android smoke test
 
@@ -41,11 +42,18 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v5
       - run: npm ci
+      - name: Make a throwaway signing key
+        id: key
+        # Proves the release-signing path (plugins/with-release-signing.js) with
+        # a key that exists only in this job; the real key is never used here.
+        run: bash scripts/ci/release-key.sh throwaway
       - name: Generate the Android project
         run: npx expo prebuild --platform android --no-install
       - name: Build the release APK for the emulator (x86_64)
         working-directory: android
         run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon
+      - name: Check it is signed with that key
+        run: bash scripts/ci/release-key.sh verify android/app/build/outputs/apk/release/app-release.apk release
       - name: Let the emulator use hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -62,6 +70,7 @@ jobs:
           script: |
             bash scripts/ci/android-smoke.sh android/app/build/outputs/apk/release/app-release.apk com.ratnesh.taskflow smoke-out
             bash scripts/ci/android-widgets.sh com.ratnesh.taskflow smoke-out
+            bash scripts/ci/android-startup.sh com.ratnesh.taskflow smoke-out
       - uses: actions/upload-artifact@v5
         if: always()
         with:

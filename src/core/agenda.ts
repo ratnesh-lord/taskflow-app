@@ -141,19 +141,23 @@ export function allItems(data: Snapshot, now: Now): TaskItem[] {
 }
 
 /** Everything ever completed: one-off tasks and each completed occurrence of repeating ones, newest first. */
-export function completedItems(data: Snapshot): TaskItem[] {
+export function completedItems(data: Snapshot, since?: LocalDate): TaskItem[] {
+  // `since` skips anything completed before that UTC day, before items are
+  // built: a year of repeats is otherwise thousands of items to throw away.
+  // A caller wanting local days from D passes the day before D (a local day
+  // can begin on the previous UTC day) and then filters by local day.
   const out: TaskItem[] = [];
   for (const task of data.tasks) {
     if (seriesOf(task)) {
       for (const r of data.occurrences.get(task.id) ?? NONE) {
-        if (r.status === 'completed' && r.completedAt) {
+        if (r.status === 'completed' && r.completedAt && (!since || r.completedAt >= since)) {
           out.push({
             key: `${task.id}@${r.date}`, task, occurrence: { date: r.date, showDate: r.date, showTime: task.dueTime, moved: false },
             date: r.date, time: task.dueTime, repeating: true, open: false, overdue: false, projected: false, completedAt: r.completedAt,
           });
         }
       }
-    } else if (task.status === 'completed' && task.completedAt) {
+    } else if (task.status === 'completed' && task.completedAt && (!since || task.completedAt >= since)) {
       out.push({
         key: task.id, task, occurrence: null, date: task.dueDate, time: task.dueTime, repeating: false, open: false,
         overdue: false, projected: false, completedAt: task.completedAt,
@@ -165,13 +169,15 @@ export function completedItems(data: Snapshot): TaskItem[] {
 
 /** Everything completed on the given day, oldest first. */
 export function completedOn(data: Snapshot, day: LocalDate, toLocal: ToLocalDate): TaskItem[] {
-  return completedItems(data).filter((i) => toLocal(i.completedAt!) === day).reverse();
+  return completedItems(data, addDays(day, -1)).filter((i) => toLocal(i.completedAt!) === day).reverse();
 }
 
 /** Completed items grouped by the day they were completed, newest day first. */
-export function completedByDay(data: Snapshot, toLocal: ToLocalDate): { date: LocalDate; items: TaskItem[] }[] {
+/** Completed items grouped by local day, newest first; `since` (a local day) leaves out earlier days. */
+export function completedByDay(data: Snapshot, toLocal: ToLocalDate, since?: LocalDate): { date: LocalDate; items: TaskItem[] }[] {
   const groups: { date: LocalDate; items: TaskItem[] }[] = [];
-  for (const item of completedItems(data)) {
+  for (const item of completedItems(data, since ? addDays(since, -1) : undefined)) {
+    if (since && toLocal(item.completedAt!) < since) continue;
     const day = toLocal(item.completedAt!);
     const last = groups[groups.length - 1];
     if (last && last.date === day) last.items.push(item);

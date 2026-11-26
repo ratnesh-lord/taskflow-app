@@ -12,6 +12,7 @@ import { readFilter, type TaskFilter } from '@/core/filters';
 import type { OccurrenceRecord } from '@/core/recurrence';
 import type { Priority, TaskStatus } from '@/core/types';
 
+import type { TableName } from './schema';
 import type { Row, Store } from './store';
 
 export type ProjectRecord = {
@@ -102,6 +103,55 @@ function group<T extends { taskId: string }>(items: T[]): Map<string, T[]> {
   return out;
 }
 
+/**
+ * Rows read for the screens, kept per store and table. A table is read again
+ * only when it has changed since (Store.version), so ticking a task re-reads
+ * the tasks, not a year of repeat history or habit logs.
+ */
+const cache = new WeakMap<Store, Map<TableName, { version: number; rows: Promise<Row[]> }>>();
+
+function rowsOf(store: Store, table: TableName): Promise<Row[]> {
+  let tables = cache.get(store);
+  if (!tables) {
+    tables = new Map();
+    cache.set(store, tables);
+  }
+  const version = store.version(table);
+  const hit = tables.get(table);
+  if (hit && hit.version === version) return hit.rows;
+  // Only a few rows changed (a tick, an edit): read just those and patch them in.
+  const changed = hit ? store.changedSince(table, hit.version) : null;
+  const rows = hit && changed ? patchRows(hit.rows, store.viewRows(table, [...changed]), changed) : store.view(table);
+  tables.set(table, { version, rows });
+  // A failed read is not kept.
+  rows.catch(() => tables.delete(table));
+  return rows;
+}
+
+/** Forget the cached rows of a store (tests compare against a fresh read). */
+export function forgetCachedRows(store: Store): void {
+  cache.delete(store);
+}
+
+/**
+ * The cached rows with the changed ones replaced, removed (deleted, or gone)
+ * or added at the end, as a fresh read would list them.
+ */
+async function patchRows(before: Promise<Row[]>, fresh: Promise<Row[]>, changed: ReadonlySet<string>): Promise<Row[]> {
+  const [old, now] = await Promise.all([before, fresh]);
+  const live = new Map(now.filter((r) => !r.deleted_at).map((r) => [r.id, r]));
+  const out: Row[] = [];
+  for (const r of old) {
+    if (!changed.has(r.id)) out.push(r);
+    else if (live.has(r.id)) {
+      out.push(live.get(r.id)!);
+      live.delete(r.id);
+    }
+  }
+  for (const r of live.values()) out.push(r);
+  return out;
+}
+
 function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
   const out = new Map<string, T[]>();
   for (const item of items) {
@@ -114,27 +164,27 @@ function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
 
 export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
   const [goals, habits, habitLogs, notes, sessions] = await Promise.all([
-    store.rows('goals'),
-    store.rows('habits'),
-    store.rows('habit_logs'),
-    store.rows('daily_notes'),
-    store.rows('focus_sessions'),
+    rowsOf(store, 'goals'),
+    rowsOf(store, 'habits'),
+    rowsOf(store, 'habit_logs'),
+    rowsOf(store, 'daily_notes'),
+    rowsOf(store, 'focus_sessions'),
   ]);
   const [tasks, occurrences, projects, categories, tags, taskTags, subtasks, reminders, attachments, filters, pending, external] = await Promise.all([
-    store.rows('tasks'),
-    store.rows('task_occurrences'),
-    store.rows('projects'),
-    store.rows('categories'),
-    store.rows('tags'),
-    store.rows('task_tags'),
-    store.rows('subtasks'),
-    store.rows('reminders'),
-    store.rows('attachments'),
-    store.rows('saved_filters'),
+    rowsOf(store, 'tasks'),
+    rowsOf(store, 'task_occurrences'),
+    rowsOf(store, 'projects'),
+    rowsOf(store, 'categories'),
+    rowsOf(store, 'tags'),
+    rowsOf(store, 'task_tags'),
+    rowsOf(store, 'subtasks'),
+    rowsOf(store, 'reminders'),
+    rowsOf(store, 'attachments'),
+    rowsOf(store, 'saved_filters'),
     store.outboxCount(),
-    store.rows('calendar_links'),
+    rowsOf(store, 'calendar_links'),
   ]);
-  const [profileRow] = await store.rows('profiles');
+  const [profileRow] = await rowsOf(store, 'profiles');
 
   const liveTasks = new Set(tasks.map((t) => t.id));
   const liveGoals = new Set(goals.map((g) => g.id));

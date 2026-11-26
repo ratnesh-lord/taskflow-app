@@ -1,17 +1,18 @@
 # Testing
 
-Eight layers of automated checks run on every push (GitHub Actions, workflow **CI**). After them comes a short checklist on the real phone, because some things only a phone can prove.
+Nine layers of automated checks run on every push (GitHub Actions, workflows **CI** and **Android smoke test**). After them comes a short checklist on the real phone, because some things only a phone can prove.
 
 | Layer | What it proves | Run it yourself |
 | --- | --- | --- |
 | Database tests | Access rules, merging, paging, purge, concurrency, on a real Postgres with the project's migrations; then the app's sync engine with two devices against those same functions | `npm run test:db` (after `npm ci`) |
 | Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, cancelling snoozes of finished tasks, Mark completed from a notification, what the widgets show, widget colours matching the app's, the calendar views and drops, task colours (contrast) and pictures, habits and streaks, the focus timer, the Eisenhower matrix, analytics and planning, Google Calendar, Tasks and Drive against an in-memory Google, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
 | Typecheck and lint | Types are sound; no rounded corner anywhere in the code | `npm run typecheck`, `npm run lint` |
-| Web end-to-end | The built web app, driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, the calendar views and dragging tasks in them, colours and pictures (including a photo upload), Plan my day, habits, goals, the focus timer, the matrix, notes, the weekly review and analytics, sign out | `bash scripts/e2e/run.sh` |
+| Web end-to-end | The built web app, served below `/taskflow-app` as on GitHub Pages and driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, the calendar views and dragging tasks in them, colours and pictures (including a photo upload), Plan my day, habits, goals, the focus timer, the matrix, notes, the weekly review and analytics, sign out | `bash scripts/e2e/run.sh` |
+| Web profile and desktop layout | A 2,000-task account: sign-in, first sync, reload, opening a 400-task list, scrolling and ticking, each with a time budget; then every screen at desktop width (nothing wider than the window, no rounded corners, the sidebar), with screenshots | `E2E_SCRIPT=profile.py E2E_SQL_TIMING=1 bash scripts/e2e/run.sh`, `E2E_SCRIPT=desktop.py bash scripts/e2e/run.sh` |
 | App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
 | Alarm and widget rules | The Kotlin alarm runtime's time-zone, due, late and summary rules, and the widgets' day, tick, deadline and next-reminder rules, on an ordinary JVM | `bash modules/taskflow-alarms/test-kotlin.sh` (needs `kotlinc`) |
 | Android build | The app, including the Kotlin alarm runtime and widgets, compiles and packages into an installable APK | GitHub Actions only |
-| Android start-up and widgets | The release app starts on an Android 15 emulator and survives a restart, a time-zone change and an alarm signal; Android lists the four widgets; each draws in light and dark (pictures in the log); a tick on a widget with the app closed is queued and starts the sync; crash traces are printed in the log | GitHub Actions only (workflow **Android smoke test**) |
+| Android start-up and widgets | The release app, signed with a throwaway key to prove release signing, starts on an Android 15 emulator and survives a restart, a time-zone change and an alarm signal; Android lists the four widgets; each draws in light and dark (pictures in the log); a tick on a widget with the app closed is queued and starts the sync; crash traces are printed in the log; five cold starts are timed, and the app's memory, alarms, background jobs and wake locks are listed | GitHub Actions only (workflow **Android smoke test**) |
 
 ## What the database tests cover
 
@@ -38,6 +39,37 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres npm run test:db
 It needs Chrome and `pip install playwright` in addition to the database requirements above. Screenshots are written to `/tmp/taskflow-e2e`.
 
 It does not cover Google sign-in, the real Supabase sign-in service or the real Realtime service; the phone checklist does.
+
+## Phase 9 phone run: the brief's twelve scenarios
+
+This is the check that finishes Phase 9. First install the newest build (after [DEPLOY.md](DEPLOY.md), steps 2 and 5, it is the release build). Have the website or a second phone open for the sync scenarios. Tick each one off; if one fails, note what you saw.
+
+**Notifications (1 to 3)**
+- [ ] 1. Give a task a reminder 2 minutes ahead. The notification arrives on time, and **Mark completed** on it ticks the task.
+- [ ] 2. Make another one 3 minutes ahead, then swipe TaskFlow away from recent apps. It still arrives.
+- [ ] 3. Make one 5 minutes ahead and restart the phone. It still arrives after the restart.
+
+**Widgets (4, 5)**
+- [ ] 4. Tick a task on the **Today's tasks** widget with the app closed. It disappears from the widget.
+- [ ] 5. Open the website: that task shows as done within a minute.
+
+**Offline and sync (6 to 8)**
+- [ ] 6. Turn on aeroplane mode. Add a task, edit another, complete a third. The app works as usual.
+- [ ] 7. Turn aeroplane mode off. Within a minute, all three changes show on the website.
+- [ ] 8. With both open, change a task's title on the phone and its priority on the website at about the same time. After a minute both show the new title **and** the new priority.
+
+**Repeats, time zones, overdue, privacy (9 to 12)**
+- [ ] 9. Make a daily task with a reminder. Tick today's: tomorrow's is still there, and only today's reminder stops. Open it and use **Skip this time** on one day, and drag another day to a new time in **Upcoming > Calendar**; the rest of the series is unchanged.
+- [ ] 10. Give a task a reminder at 15:00, then change the phone's time zone (**Settings > System > Date and time**, turn off automatic). The reminder stays at 15:00 local time. Set the zone back.
+- [ ] 11. A task due yesterday shows red under **Overdue** on Today, and the count matches. A task due later today is not overdue until its time.
+- [ ] 12. Sign in on the website with a second account (sign up a new one). None of your tasks appear. (The test account can be removed in Supabase under **Authentication > Users**.)
+
+**Speed and battery**
+- [ ] Opening the app shows Today within about 2 seconds. Scrolling a long list is smooth.
+- [ ] After a normal day, **Settings > Battery > Battery usage** lists TaskFlow at a small share, not near the top.
+
+**On a computer**
+- [ ] The website at full screen shows the tabs as a sidebar on the left, and every page is readable.
 
 ## Phone checklist for Phase 8
 
@@ -165,6 +197,8 @@ Run these on the phone after [setup](SETUP.md). Each line is something no automa
 - [ ] Sign in on the web build or a second device with the same account, run the connection check there, and confirm both show the same account.
 
 ## The brief's twelve scenarios
+
+What the automated checks prove for each. The phone run above is what proves each one on the phone.
 
 | # | Scenario | Status |
 | --- | --- | --- |

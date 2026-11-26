@@ -40,6 +40,9 @@ export const TOUCH = 48;
 
 /** Height of the app's own tab bar, above the system navigation inset. */
 export const TAB_BAR_HEIGHT = 62;
+/** From this window width (a desktop browser, a tablet) the tabs become a sidebar. */
+export const SIDEBAR_FROM_WIDTH = 1024;
+export const SIDEBAR_WIDTH = 232;
 
 /** Room the floating add button needs at the bottom right. */
 export const FAB_SPACE = 88;

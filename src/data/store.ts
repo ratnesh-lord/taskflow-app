@@ -26,6 +26,13 @@ export type ChangeOrigin = 'local' | 'sync';
 type ChangeKind = 'insert' | 'update' | 'remove' | 'restore';
 type Change = { table: TableName; id: string; kind: ChangeKind; before: Record<string, unknown> };
 
+/** A change touching more rows than this makes readers reload the whole table. */
+const CHANGE_LOG_ROWS = 300;
+/** Changes remembered per table. */
+const CHANGE_LOG_ENTRIES = 64;
+/** Rows per multi-row INSERT is chosen so one statement has at most this many values. */
+const MAX_VALUES_PER_STATEMENT = 900;
+
 /** What a transaction changed, so it can be reversed. */
 export type UndoLog = { changes: Change[] };
 
@@ -152,6 +159,91 @@ export class Store {
     for (const l of this.listeners) l(origin);
   }
 
+  /** How many times each table has changed since this store was opened. */
+  private versions = new Map<TableName, number>();
+  /** Per table, the rows each recent change touched (null: too many to list). */
+  private changeLog = new Map<TableName, { version: number; ids: Set<string> | null }[]>();
+
+  private bump(ids: Map<TableName, Set<string> | null>): void {
+    for (const [table, rows] of ids) {
+      const version = (this.versions.get(table) ?? 0) + 1;
+      this.versions.set(table, version);
+      const log = this.changeLog.get(table) ?? [];
+      log.push({ version, ids: rows && rows.size <= CHANGE_LOG_ROWS ? rows : null });
+      if (log.length > CHANGE_LOG_ENTRIES) log.shift();
+      this.changeLog.set(table, log);
+    }
+  }
+
+  /**
+   * The rows of a table that changed after `version` (a value version()
+   * returned), or null when that is not known exactly (too many, or too long
+   * ago): then read the whole table again.
+   */
+  changedSince(table: TableName, version: number): Set<string> | null {
+    const now = this.version(table);
+    if (version === now) return new Set();
+    const log = this.changeLog.get(table) ?? [];
+    if (!log.length || log[0].version > version + 1) return null;
+    const out = new Set<string>();
+    for (const entry of log) {
+      if (entry.version <= version) continue;
+      if (!entry.ids) return null;
+      for (const id of entry.ids) out.add(id);
+      if (out.size > CHANGE_LOG_ROWS) return null;
+    }
+    return out;
+  }
+
+  /** Some rows of a table, as view() reads them, deleted ones included (deleted_at set). */
+  viewRows(table: TableName, ids: readonly string[]): Promise<Row[]> {
+    const cols = Object.entries(columnsOf(table));
+    const names = ['id', 'created_at', 'updated_at', 'deleted_at', ...cols.map(([name]) => name)];
+    return this.queue.run(async () => {
+      const out: Row[] = [];
+      for (let i = 0; i < ids.length; i += 400) {
+        const part = ids.slice(i, i + 400);
+        const raw = await this.db.all<Record<string, unknown>>(
+          `SELECT ${names.join(', ')} FROM ${table} WHERE id IN (${part.map(() => '?').join(', ')})`,
+          part,
+        );
+        for (const r of raw) {
+          const row: Record<string, unknown> = { id: r.id, created_at: r.created_at, updated_at: r.updated_at, deleted_at: r.deleted_at ?? null };
+          for (const [name, col] of cols) row[name] = decode(col.type, r[name]);
+          out.push(row as Row);
+        }
+      }
+      return out;
+    });
+  }
+
+  /**
+   * A number that changes whenever the table does (an edit here, rows from
+   * the server, a clear). Read it before reading the rows, and the rows are
+   * at least as new as the number.
+   */
+  version(table: TableName): number {
+    return this.versions.get(table) ?? 0;
+  }
+
+  /**
+   * Every live row of a table for showing on screen: the table's own columns
+   * plus id, created_at and updated_at, without the sync bookkeeping
+   * (field_ts, rev), which is the slow part of reading a large table.
+   */
+  view(table: TableName): Promise<Row[]> {
+    const cols = Object.entries(columnsOf(table));
+    const names = ['id', 'created_at', 'updated_at', ...cols.map(([name]) => name)];
+    return this.queue.run(async () => {
+      const raw = await this.db.all<Record<string, unknown>>(`SELECT ${names.join(', ')} FROM ${table} WHERE deleted_at IS NULL`);
+      return raw.map((r) => {
+        const out: Record<string, unknown> = { id: r.id, created_at: r.created_at, updated_at: r.updated_at, deleted_at: null };
+        for (const [name, col] of cols) out[name] = decode(col.type, r[name]);
+        return out as Row;
+      });
+    });
+  }
+
   /** Every live row of a table, decoded. */
   rows(table: TableName): Promise<Row[]> {
     return this.queue.run(async () => {
@@ -237,12 +329,50 @@ export class Store {
           }
 
           const nowIso = this.now().toISOString();
+          const touched = new Map<TableName, Set<string> | null>();
           for (const table of TABLE_NAMES) {
-            const rows = changes[table];
-            if (!rows?.length) continue;
+            const rows = (changes[table] ?? []).filter((r) => typeof r.id === 'string');
+            if (!rows.length) continue;
+            touched.set(table, new Set(rows.map((r) => r.id as string)));
             const cols = columnsOf(table);
+
+            // The rows already here, read in batches rather than one at a time.
+            const existing = new Map<string, Record<string, unknown>>();
+            const ids = [...new Set(rows.map((r) => r.id as string))];
+            for (let i = 0; i < ids.length; i += 400) {
+              const part = ids.slice(i, i + 400);
+              const found = await this.db.all<Record<string, unknown>>(`SELECT * FROM ${table} WHERE id IN (${part.map(() => '?').join(', ')})`, part);
+              for (const r of found) existing.set(r.id as string, r);
+            }
+
+            // New rows wait here and go in as multi-row INSERTs, grouped by their columns.
+            const inserts = new Map<string, Record<string, SqlValue>[]>();
+            const flush = async () => {
+              for (const [keyList, group] of inserts) {
+                const keys = keyList.split(',');
+                const per = Math.max(1, Math.floor(MAX_VALUES_PER_STATEMENT / (keys.length + 1)));
+                for (let i = 0; i < group.length; i += per) {
+                  const part = group.slice(i, i + per);
+                  const one = `(?${keys.map(() => ', ?').join('')})`;
+                  await this.db.run(
+                    `INSERT INTO ${table} (id, ${keys.join(', ')}) VALUES ${part.map(() => one).join(', ')}`,
+                    part.flatMap((v) => [v.id, ...keys.map((k) => v[k])]),
+                  );
+                }
+              }
+              inserts.clear();
+            };
+            const queued = new Set<string>();
+
             for (const remote of rows) {
-              if (typeof remote.id !== 'string') continue;
+              const id = remote.id as string;
+              if (queued.has(id)) {
+                // The same row twice in one batch: write the first, then treat the second as an update.
+                await flush();
+                queued.clear();
+                const [again] = await this.db.all<Record<string, unknown>>(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+                if (again) existing.set(id, again);
+              }
               const remoteTs = (remote.field_ts && typeof remote.field_ts === 'object' ? remote.field_ts : {}) as Record<string, string>;
               for (const stamp of Object.values(remoteTs)) if (typeof stamp === 'string') this.clock.receive(stamp);
 
@@ -261,9 +391,9 @@ export class Store {
                 values[name] = encode(col.type, value);
               }
 
-              const [raw] = await this.db.all<Record<string, unknown>>(`SELECT * FROM ${table} WHERE id = ?`, [remote.id]);
+              const raw = existing.get(id);
               const fieldTs: Record<string, string> = { ...remoteTs };
-              const mine = pending.get(`${table}:${remote.id}`);
+              const mine = pending.get(`${table}:${id}`);
               if (raw && mine?.size) {
                 const localTs = (decode('json', raw.field_ts) ?? {}) as Record<string, string>;
                 for (const k of mine) {
@@ -277,19 +407,23 @@ export class Store {
               if (raw) {
                 await this.db.run(`UPDATE ${table} SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, [
                   ...keys.map((k) => values[k]),
-                  remote.id,
+                  id,
                 ]);
               } else {
-                await this.db.run(`INSERT INTO ${table} (id, ${keys.join(', ')}) VALUES (?${keys.map(() => ', ?').join('')})`, [
-                  remote.id,
-                  ...keys.map((k) => values[k]),
-                ]);
+                const keyList = keys.join(',');
+                const group = inserts.get(keyList) ?? [];
+                group.push({ ...values, id });
+                inserts.set(keyList, group);
+                queued.add(id);
               }
               applied += 1;
             }
+            await flush();
+            if (rows.length > CHANGE_LOG_ROWS) touched.set(table, null);
           }
           await this.db.run('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [CLOCK_KEY, JSON.stringify(this.clock.snapshot())]);
           await this.db.exec('COMMIT');
+          this.bump(touched);
         } catch (e) {
           await this.db.exec('ROLLBACK').catch(() => {});
           throw e;
@@ -310,6 +444,7 @@ export class Store {
         try {
           for (const table of TABLE_NAMES) await this.db.run(`DELETE FROM ${table}`);
           await this.db.exec('COMMIT');
+          this.bump(new Map(TABLE_NAMES.map((t) => [t, null])));
         } catch (e) {
           await this.db.exec('ROLLBACK').catch(() => {});
           throw e;
@@ -339,6 +474,13 @@ export class Store {
           const result = await work(this.makeTx(changes));
           await this.db.run('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [CLOCK_KEY, JSON.stringify(this.clock.snapshot())]);
           await this.db.exec('COMMIT');
+          const touched = new Map<TableName, Set<string> | null>();
+          for (const c of changes) {
+            const ids = touched.get(c.table) ?? new Set<string>();
+            ids.add(c.id);
+            touched.set(c.table, ids);
+          }
+          this.bump(touched);
           return { result, undo: { changes }, changed: changes.length > 0 };
         } catch (e) {
           await this.db.exec('ROLLBACK').catch(() => {});

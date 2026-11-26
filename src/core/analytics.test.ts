@@ -89,3 +89,23 @@ describe('groups', () => {
     expect(total(days)).toBe(7);
   });
 });
+
+describe('only recent history is read, across time zones', () => {
+  // Local day of an instant, for a fixed offset from UTC in minutes.
+  const zone = (offset: number) => (iso: string) => new Date(Date.parse(iso) + offset * 60_000).toISOString().slice(0, 10);
+
+  it('finds a task finished late on the UTC day before (India, +5:30)', () => {
+    const ist = zone(330);
+    const lateEvening = done('2026-11-24T20:00:00Z'); // 01:30 on the 25th in India
+    const data = snap([lateEvening, done('2026-11-23T20:00:00Z')]);
+    expect(doneCounts(data, '2026-11-25', ist).today).toBe(1);
+    expect(donePerDay(data, '2026-11-24', '2026-11-25', ist).map((d) => d.count)).toEqual([1, 1]);
+  });
+
+  it('finds a task finished early on the UTC day after (Hawaii, −10:00)', () => {
+    const hst = zone(-600);
+    const data = snap([done('2026-11-25T08:00:00Z')]); // 22:00 on the 24th in Hawaii
+    expect(doneCounts(data, '2026-11-24', hst).today).toBe(1);
+    expect(donePerDay(data, '2026-11-24', '2026-11-24', hst)[0].count).toBe(1);
+  });
+});

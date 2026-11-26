@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 
 import { titleWithEmoji } from '@/core/appearance';
 import { localDateOf } from '@/core/dates';
@@ -31,12 +31,35 @@ const hhmm = (iso: string) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-/** The current time, every second while the screen is open. */
+/**
+ * The current time, every second while this screen is open and the app is on
+ * screen. In the background it stops; the alarm, not this clock, rings at the
+ * end, and the time is read afresh on return.
+ */
 function useTicker(): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (!id) id = setInterval(() => setNowMs(Date.now()), 1000);
+    };
+    const stop = () => {
+      if (id) clearInterval(id);
+      id = null;
+    };
+    if (AppState.currentState !== 'background') start();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setNowMs(Date.now());
+        start();
+      } else if (state === 'background') {
+        stop();
+      }
+    });
+    return () => {
+      stop();
+      sub.remove();
+    };
   }, []);
   return nowMs;
 }

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- updatePeriodMillis is 0: Android's periodic update wakes a sleeping phone,
+     and the widgets do not need it. They are redrawn when the data changes,
+     at midnight and at the next deadline (a non-waking alarm, Widgets.kt),
+     after each reminder, after a restart and after an app update. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
   android:minWidth="110dp"
   android:minHeight="110dp"
@@ -7,7 +11,7 @@
   android:targetCellWidth="2"
   android:targetCellHeight="2"
   android:resizeMode="horizontal|vertical"
-  android:updatePeriodMillis="1800000"
+  android:updatePeriodMillis="0"
   android:initialLayout="@layout/tf_widget_loading"
   android:description="@string/tf_widget_pending_description"
   android:widgetCategory="home_screen" />

@@ -107,7 +107,8 @@ export function widgetData(
   data: Snapshot,
   opts: { now: Now; nowMs: number; toLocal: ToLocalDate; hour12: boolean },
 ): WidgetData {
-  const doneByDay = new Map(completedByDay(data, opts.toLocal).map((g) => [g.date, g.items.length]));
+  // The week bars need at most the last eight days (tomorrow's week included).
+  const doneByDay = new Map(completedByDay(data, opts.toLocal, addDays(opts.now.date, -8)).map((g) => [g.date, g.items.length]));
   const tomorrow: Now = { date: addDays(opts.now.date, 1), minutes: 0 };
   return {
     version: 1,

@@ -20,7 +20,7 @@ export type DayCount = { date: LocalDate; count: number };
 
 /** Everything completed from one day to another (inclusive), newest first. */
 export function doneBetween(data: Snapshot, from: LocalDate, to: LocalDate, toLocal: ToLocalDate): TaskItem[] {
-  return completedItems(data).filter((i) => {
+  return completedItems(data, addDays(from, -1)).filter((i) => {
     const d = toLocal(i.completedAt!);
     return d >= from && d <= to;
   });
@@ -47,7 +47,7 @@ export function doneCounts(data: Snapshot, today: LocalDate, toLocal: ToLocalDat
   let t = 0;
   let w = 0;
   let m = 0;
-  for (const item of completedItems(data)) {
+  for (const item of completedItems(data, addDays(week < month ? week : month, -1))) {
     const d = toLocal(item.completedAt!);
     if (d > today) continue;
     if (d === today) t += 1;

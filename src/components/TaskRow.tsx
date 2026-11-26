@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { TaskItem } from '@/core/agenda';
-import { dayLabel, type LocalDate } from '@/core/dates';
+import { dayLabel, diffDays, type LocalDate, MONTH_SHORT, parts, WEEKDAY_SHORT, weekday } from '@/core/dates';
 import type { Priority } from '@/core/types';
 import { useLook } from '@/state/look';
 import { useTheme } from '@/state/theme';
@@ -45,11 +45,19 @@ export function PriorityMark({ priority }: { priority: Priority }) {
   return <View role="img" accessibilityLabel={label} aria-label={label} style={[styles.mark, style]} />;
 }
 
-function leadText(item: TaskItem, today: LocalDate, lead: 'time' | 'date'): string {
+/**
+ * The short label left of the checkbox: the time ("12:30 pm"), or the day:
+ * "Today", "Tomorrow", "Yesterday", a weekday this week ("Wed"), or "23 Nov".
+ * The longest, "Yesterday", fits the column.
+ */
+export function leadText(item: Pick<TaskItem, 'date' | 'time'>, today: LocalDate, lead: 'time' | 'date'): string {
   if (lead === 'time') return item.time ? shortTime(item.time) : '';
   if (!item.date) return '';
-  const label = dayLabel(item.date, today);
-  return label.length > 9 ? label.slice(0, 3) + label.slice(label.indexOf(' ')) : label.slice(0, 9);
+  const days = diffDays(today, item.date);
+  if (days >= -1 && days <= 1) return dayLabel(item.date, today);
+  if (days > 1 && days < 7) return WEEKDAY_SHORT[weekday(item.date)];
+  const p = parts(item.date);
+  return `${p.day} ${MONTH_SHORT[p.month - 1]}`;
 }
 
 export const TaskRow = memo(function TaskRow({ item, info, today, lead, selecting, selected, onToggle, onOpen, onSelect }: TaskRowProps) {
@@ -131,7 +139,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingRight: space.md,
   },
-  lead: { width: 60, paddingLeft: space.sm + 2, fontVariant: ['tabular-nums'] },
+  lead: { width: 72, paddingLeft: space.sm + 2, fontVariant: ['tabular-nums'] },
   body: { flex: 1, minWidth: 0, gap: 2, paddingVertical: space.sm, paddingRight: space.sm },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   mark: { width: 8, height: 8 },

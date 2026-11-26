@@ -118,6 +118,56 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  web-profile:
+    name: Web profile and desktop layout
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: pip install playwright
+      - name: Start-up and scrolling with a large account (2,000 tasks)
+        env:
+          E2E_SCRIPT: profile.py
+          E2E_SQL_TIMING: '1'
+          E2E_SHOTS: ${{ runner.temp }}/profile
+        run: bash scripts/e2e/run.sh | tee ${{ runner.temp }}/profile.txt
+      - name: Every screen at desktop width
+        env:
+          E2E_SCRIPT: desktop.py
+          E2E_SHOTS: ${{ runner.temp }}/desktop
+        run: bash scripts/e2e/run.sh
+      - name: Keep the timings and screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: web-profile-and-desktop
+          path: |
+            ${{ runner.temp }}/profile.txt
+            ${{ runner.temp }}/desktop
+          if-no-files-found: ignore
+          retention-days: 14
+
   android:
     name: Android APK
     runs-on: ubuntu-latest
@@ -130,6 +180,8 @@ jobs:
       # Actions > Variables; saved as secrets instead, they are picked up too.
       EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL || secrets.EXPO_PUBLIC_SUPABASE_URL }}
       EXPO_PUBLIC_SUPABASE_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_KEY || secrets.EXPO_PUBLIC_SUPABASE_KEY }}
+      # Every build gets a higher version code, so Android treats it as an update.
+      TASKFLOW_VERSION_CODE: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v5
       - name: Check the app's Supabase settings
@@ -147,11 +199,23 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v5
       - run: npm ci
+      - name: Use the release signing key (when the repository has one)
+        id: key
+        # Pull requests from forks get no secrets, and their builds keep the debug key.
+        env:
+          TASKFLOW_KEYSTORE_BASE64: ${{ secrets.TASKFLOW_KEYSTORE_BASE64 }}
+          TASKFLOW_KEYSTORE_PASSWORD: ${{ secrets.TASKFLOW_KEYSTORE_PASSWORD }}
+          TASKFLOW_KEY_ALIAS: ${{ secrets.TASKFLOW_KEY_ALIAS }}
+          TASKFLOW_KEY_PASSWORD: ${{ secrets.TASKFLOW_KEY_PASSWORD }}
+        run: bash scripts/ci/release-key.sh use
       - name: Generate the Android project
         run: npx expo prebuild --platform android --no-install
       - name: Build the APK (64-bit ARM, which every current phone uses)
         working-directory: android
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --stacktrace
+      - name: Check the APK's signature
+        id: signature
+        run: bash scripts/ci/release-key.sh verify android/app/build/outputs/apk/release/app-release.apk ${{ steps.key.outputs.signing }}
       - name: Name the APK
         run: |
           mkdir -p out
@@ -169,14 +233,22 @@ jobs:
           APP_HOST: ${{ steps.settings.outputs.host }}
           GOOGLE: ${{ steps.settings.outputs.google }}
           CONFIRM_EMAIL: ${{ steps.settings.outputs.confirm_email }}
+          SIGNING: ${{ steps.key.outputs.signing }}
+          SHA1: ${{ steps.signature.outputs.sha1 }}
         run: |
           cp out/taskflow-*.apk out/taskflow-latest.apk
           {
-            echo "Built from ${GITHUB_SHA::7} on $(date -u '+%d %b %Y, %H:%M UTC')."
+            echo "Version 1.0.0, build ${TASKFLOW_VERSION_CODE}, from ${GITHUB_SHA::7} on $(date -u '+%d %b %Y, %H:%M UTC')."
             echo
             echo "Connects to ${APP_HOST}. Google sign-in: ${GOOGLE}. Email confirmation: ${CONFIRM_EMAIL}."
             echo
-            echo "**To install or update:** open this page on the phone, tap **taskflow-latest.apk**, then open the download. A new build installs over the previous one."
+            if [[ "${SIGNING}" == release ]]; then
+              echo "Signed with TaskFlow's release key (SHA-1 \`${SHA1}\`)."
+            else
+              echo "Signed with the shared development key, not a release key yet (docs/DEPLOY.md, \"Release signing key\")."
+            fi
+            echo
+            echo "**To install or update:** open this page on the phone, tap **taskflow-latest.apk**, then open the download. A new build installs over the previous one, as long as both were signed with the same key."
           } > release-notes.md
           # Replace the previous build, so the release and its tag always point at this commit.
           gh release delete latest-build --yes --cleanup-tag 2>/dev/null || true

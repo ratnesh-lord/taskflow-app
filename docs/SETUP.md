@@ -60,7 +60,7 @@ In Supabase open **Authentication > URL Configuration**.
 
 1. **Redirect URLs:** add `taskflow://auth-callback`. This is where Google sign-in, email confirmation and password-reset links return to on the phone.
 2. For developing the web app on your computer, also add `http://localhost:8081/auth-callback`.
-3. **Site URL:** leave it for now. It becomes the web app's address in Phase 10.
+3. **Site URL:** leave it for now. [DEPLOY.md](DEPLOY.md), step 4, sets it to the website's address.
 
 Email sign-up sends a confirmation link by default, and the free plan sends only a few emails an hour. For a personal app you can turn confirmation off under **Authentication > Sign In / Providers > Email > Confirm email**.
 
@@ -94,7 +94,7 @@ Use the same Google Cloud project as step 6. If you skipped step 6, create the p
    - **Package name:** `com.ratnesh.taskflow`
    - **SHA-1 certificate fingerprint:** `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`
 
-   This fingerprint belongs to the key GitHub currently signs the APK with. It is the standard Android development key, so it is public. In Phase 10 the app gets its own release key, and you will add that key's fingerprint as a second Android client.
+   This fingerprint belongs to the standard Android development key, which signs builds until you add your own release key. It is public. [DEPLOY.md](DEPLOY.md), step 4, adds the release key's fingerprint as a second Android client.
 4. On the phone: **More → Google Calendar, Tasks and Drive**, and switch on what you want. The first time, Google shows a screen saying it **hasn't verified this app**. That is expected for a personal app: tap **Advanced**, then **Go to TaskFlow**, then **Allow**.
 
 For the web version on your computer (section 9), also open your **Web application** client from step 6. Under **Authorized JavaScript origins**, add the address the web app runs at, for example `http://localhost:8081`. Then add this line to the `.env` file, using that client's ID: `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=...apps.googleusercontent.com`. The client ID is public; the client secret never goes in the app.
