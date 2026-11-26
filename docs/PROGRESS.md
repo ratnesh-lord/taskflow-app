@@ -427,17 +427,17 @@ This phase adds five tables and one task field to the database (migration 7). Me
 
 ### Measurements
 
-In Chrome on the build machine, with 2,040 tasks and 14,600 repeat records:
+In Chrome, with 2,040 tasks and 14,600 repeat records (the "after" figures were measured both on the build machine and in CI):
 
 | Step | Before | After |
 | --- | --- | --- |
 | Sign in until Today shows | 0.9 s | 0.9 s |
-| ... until the whole account has arrived | 27 s | 17 s (about 10 s of it is the browser writing to disk) |
+| ... until the whole account has arrived | 27 s | 15 to 17 s (about 10 s of it is the browser writing to disk) |
 | Reload until Today's tasks show | 1.2 s | 1.1 to 1.6 s |
 | Open a 400-task Inbox until the first task shows | 0.7 s | 0.4 to 0.7 s |
 | Scrolling that list | 95% of frames within 21 ms | within 17 ms, no frame over 50 ms |
 | Tick a task until Today shows it | 0.9 s | 0.5 to 0.6 s |
-| Tick a repeating task until Today shows it | 1.7 s | 0.6 s |
+| Tick a repeating task until Today shows it | 1.7 s | 0.5 to 0.6 s |
 
 In the app's rules and database (Node, same machine), with 2,000 tasks and 29,000 repeat records:
 
@@ -449,9 +449,17 @@ In the app's rules and database (Node, same machine), with 2,000 tasks and 29,00
 | Widget data | 86 ms | 9 ms |
 | Weekly review | 54 ms | 15 ms |
 
-ANDROID_NUMBERS
+On the Android 15 emulator in CI (x86_64, signed out):
 
-A phone runs the app's JavaScript roughly three to five times slower than these machines. These are a guide, not phone numbers.
+| Measure | Result |
+| --- | --- |
+| Cold start until Android's first frame, median of five | 391 ms (runs: 473, 392, 391, 385, 381) |
+| Memory in use 20 seconds after a start | about 79 MB (PSS) |
+| Alarms, background jobs and wake locks while idle | none |
+
+These are for the signed-out app on an emulator. Android's "first frame" is the splash screen, before your task list is loaded. A signed-out app also schedules no reminders or background sync. Signed-in start-up and background activity are measured on the phone, in the Phase 9 phone run.
+
+A phone may run the app's JavaScript several times slower than these machines (an estimate, not measured), so these figures are a guide, not phone numbers.
 
 ### How it was checked
 
@@ -462,7 +470,8 @@ A phone runs the app's JavaScript roughly three to five times slower than these 
   - the label beside each task never longer than "Yesterday".
 
   Two deliberate breakages of the new caching were caught by the tests.
-- **Totals:** 326 unit tests and the database tests pass, including two simulated devices syncing through Postgres. The web end-to-end test passes (103 checks).
+- **Totals:** 326 unit tests and the database tests pass, including two simulated devices syncing through Postgres. The web end-to-end test passes (103 checks), and so do the profile and desktop job and the Android build and emulator test, all in CI.
+- **A flaky Phase 8 test fixed:** a database test sent three changes with the same edit time, so on a fast machine one could be counted as stale. It passed before by timing luck; each change now has its own time.
 
 ### Not yet proven
 

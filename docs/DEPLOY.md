@@ -21,9 +21,9 @@ If a test fails, nothing is published, and the previous APK and website stay as 
 
 Android lets an app be updated only by an APK signed with the same key. Until now, builds were signed with React Native's shared development key, which anyone can use. Your own key means only your builds can update TaskFlow on your phone.
 
-You received two files with this change: `taskflow-release-key.txt` and `taskflow-release.jks`.
+Your key was delivered with this change as two files: `taskflow-release-key.txt` and `taskflow-release.jks`.
 
-1. Save **both** in a safe, private place, such as your password manager. Do not put them in the repository, an email or a chat.
+1. Save **both** in a safe, private place, such as your password manager. Then delete any other copies, for example in your Downloads folder. Never put them in the repository or send them to anyone.
 2. In GitHub open **Settings > Secrets and variables > Actions**, the **Secrets** tab, and add four **repository secrets**. The names and values are in `taskflow-release-key.txt`:
 
    | Secret | Value |
