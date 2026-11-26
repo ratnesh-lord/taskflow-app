@@ -399,6 +399,108 @@ Everything is under **More → Plan and review**. The Today screen is unchanged,
 
 This phase adds five tables and one task field to the database (migration 7). Merging the pull request runs **Apply database migrations** automatically. Wait for it to turn green before installing the new APK.
 
+## Phase 9: testing and optimisation (code complete; needs your 12-scenario phone run)
+
+### What was done
+
+- **Profiles with a large account.** 2,000 tasks with a year of daily repeats, habits and focus sessions. They are measured three ways, each with time budgets so a slowdown fails a check:
+  - the app's rules and device database (`src/data/perf.test.ts`, part of `npm run check`);
+  - the web app in Chrome (`scripts/e2e/profile.py`, its own CI job);
+  - Android start-up on the emulator (`scripts/ci/android-startup.sh`).
+- **What the profiles found, and the fixes:**
+  - *Every edit re-read every table.* Ticking one task re-read 2,000 tasks and, for a repeating task, 15,000 to 29,000 repeat records. Now the database keeps a list of which rows changed, and the screens re-read only those.
+  - *Sync wrote rows one at a time.* A first sign-in on a big account ran about 29,000 separate database statements in the browser. Rows now go in batches: about 300 statements.
+  - *Screens were rebuilt after every page a sync brought down.* Refreshes caused by syncing now happen at most every 1.5 seconds; your own edits still show at once.
+  - *Counting today's or this week's done tasks went through all history.* Only the days needed are read now.
+  - *A long list was blank until every row was drawn.* The first 40 rows now show at once, and the rest a frame later.
+- **Battery review.** Everything that could wake the phone or keep it busy was checked:
+  - **Reminders:** one exact alarm at a time, for the next reminder only. This was already right.
+  - **Background sync:** every 30 minutes, through Android's job scheduler, which holds it while the phone dozes and batches it with other apps. Kept: it keeps notifications and widgets current when another device changes something.
+  - **Widgets:** each kind asked Android to update it every 30 minutes, which wakes a sleeping phone. That is up to about 190 wake-ups a day with all four placed. It is now off. The widgets still redraw on new data, at midnight, at the next deadline, after each reminder, after a restart and after an update, using an alarm that waits for the phone to be awake anyway.
+  - **The minute clock and the focus timer's clock** kept running in the background, redrawing the screens for nobody. They now stop.
+  - **The live-updates connection** stayed open in the background, with a heartbeat every 30 seconds keeping the radio awake. It now closes in the background and reopens on return, followed by the usual catch-up sync.
+- **Desktop layout.** Every screen was captured at 1440 pixels wide and checked by eye.
+  - On a wide window (1,024 pixels and up), the five tabs are now a **sidebar** on the left rather than a bar stretched along the bottom.
+  - The time or day beside each task was cut off on every screen size ("Yester…", "12:30 …", "Mon 2…"). The column is now wider, and days use short forms: "Yesterday", "Wed", "23 Nov".
+  - CI now captures every screen at desktop width on each push, and checks nothing is wider than the window and nothing has rounded corners.
+- **The 12 scenarios:** a single phone run with one step per scenario, in [TESTING.md](TESTING.md), "Phase 9 phone run".
+
+### Measurements
+
+In Chrome on the build machine, with 2,040 tasks and 14,600 repeat records:
+
+| Step | Before | After |
+| --- | --- | --- |
+| Sign in until Today shows | 0.9 s | 0.9 s |
+| ... until the whole account has arrived | 27 s | 17 s (about 10 s of it is the browser writing to disk) |
+| Reload until Today's tasks show | 1.2 s | 1.1 to 1.6 s |
+| Open a 400-task Inbox until the first task shows | 0.7 s | 0.4 to 0.7 s |
+| Scrolling that list | 95% of frames within 21 ms | within 17 ms, no frame over 50 ms |
+| Tick a task until Today shows it | 0.9 s | 0.5 to 0.6 s |
+| Tick a repeating task until Today shows it | 1.7 s | 0.6 s |
+
+In the app's rules and database (Node, same machine), with 2,000 tasks and 29,000 repeat records:
+
+| Step | Before | After |
+| --- | --- | --- |
+| First load from the database | 279 ms | 139 to 155 ms |
+| Reload after ticking a task | 279 ms | 30 to 44 ms |
+| Today's lists | 27 ms | 5 ms |
+| Widget data | 86 ms | 9 ms |
+| Weekly review | 54 ms | 15 ms |
+
+ANDROID_NUMBERS
+
+A phone runs the app's JavaScript roughly three to five times slower than these machines. These are a guide, not phone numbers.
+
+### How it was checked
+
+- **New tests:**
+  - a random sequence of 300 edits, undos, server changes and clears, after each of which the screens' copy of the data must equal a fresh read;
+  - server rows in large batches, a row listed twice, and a field with an unsent edit;
+  - days counted correctly across time zones (India, +5:30, and Hawaii, −10:00);
+  - the label beside each task never longer than "Yesterday".
+
+  Two deliberate breakages of the new caching were caught by the tests.
+- **Totals:** 326 unit tests and the database tests pass, including two simulated devices syncing through Postgres. The web end-to-end test passes (103 checks).
+
+### Not yet proven
+
+- **Everything in the Phase 9 phone run:** the brief's 12 scenarios, start-up and scrolling on your phone, and TaskFlow's share in Android's battery screen after a normal day.
+- **Big accounts in the browser:** the first sign-in on a new computer takes about 15 to 20 seconds to bring down a year of history. Today shows within about 3 seconds while the rest arrives.
+
+## Phase 10: deployment and documentation (code complete; needs your one-time setup)
+
+### What was done
+
+- **Release signing.**
+  - A release key was made for TaskFlow and given to you as `taskflow-release-key.txt` and `taskflow-release.jks`. It is not in the repository.
+  - With its four values saved as GitHub secrets, every build is signed with it. The build checks the signature, and the release notes give its SHA-1 fingerprint. Without the secrets, builds keep the development key and the release notes say so.
+  - Each build also gets a higher build number, so Android always treats it as an update. The version is now 1.0.0.
+- **The website.** After CI passes on `main`, the workflow **Publish the web app** builds the web app and publishes it on GitHub Pages, at https://ratnesh-lord.github.io/taskflow-app/. That needs no hosting account, because the repository is public.
+  - The site lives below `/taskflow-app`, so the app was taught to build for a sub-path, and sign-in links now return there.
+  - Opening any address directly works: Pages serves a copy of the app as its 404 page, and the app shows the right screen.
+- **Guides:**
+  - [INSTALL.md](INSTALL.md): install and use;
+  - [BUILD.md](BUILD.md): develop and check;
+  - [DEPLOY.md](DEPLOY.md): the release key, the website, sign-in addresses, moving the phone to the release build, and what to do if something goes wrong.
+  
+  README, SETUP, TESTING and `.env.example` are updated.
+
+### How it was checked
+
+- **Signing:** each emulator run builds the app signed with a throwaway key made in that job, checks the APK carries that key, and then runs the start-up and widget tests on it. The real key was checked to open with the values in your file.
+- **Website:** the web end-to-end test now builds for `/taskflow-app` and serves it the way GitHub Pages does. All 103 checks pass there. That includes the app's code loading from below the sub-path, opening a deep address directly, and sign-in links returning to `/taskflow-app/auth-callback`.
+
+### Not yet proven
+
+- **The real deploy steps.** The first real run of **Publish the web app**, and a release-signed build on your phone. Both wait for your setup in DEPLOY.md.
+- **The switch to the release key.** Moving from a development build to a release build means uninstalling once. Everything synced comes back on sign-in, but notification permission, battery settings, widgets and the Google connection must be set up again.
+
+### Before installing
+
+Do [DEPLOY.md](DEPLOY.md) steps 2 to 5, in order. This change adds nothing to the database.
+
 ## Remaining work
 
 - [x] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
@@ -409,8 +511,11 @@ This phase adds five tables and one task field to the database (migration 7). Me
 - [x] Phase 6: four home-screen widgets, ticking tasks from the widget, quick add from the widget
 - [x] Phase 7: calendar views, drag to reschedule, Google Calendar, Drive and Tasks
 - [x] Phase 8: analytics, daily planning, weekly review, goals, habits, focus timer, notes, Eisenhower matrix
-- [ ] Phase 9: all twelve scenarios on the phone, performance and battery review, desktop layout polish
-- [ ] Phase 10: release signing key, web deployment, final documentation
+- [x] Phase 9: profiles and speed-ups, battery review, desktop layout (code complete)
+- [ ] Phase 9 phone run: the brief's twelve scenarios on your phone (docs/TESTING.md)
+- [x] Phase 10: release signing, web deployment, guides (code complete)
+- [ ] Phase 10 setup: signing secrets, GitHub Pages, sign-in addresses, reinstall once (docs/DEPLOY.md)
+- [ ] Earlier phone checklists still open: Phase 6 (widgets), Phase 7 (calendar and Google), Phase 8, colours and pictures
 
 Smaller items carried forward:
 

@@ -80,7 +80,7 @@ SCROLL = """async () => {
 }"""
 
 with sync_playwright() as p:
-    browser = p.chromium.launch()
+    browser = p.chromium.launch(channel="chrome", headless=True)
     page = browser.new_page(viewport={"width": 412, "height": 915}, timezone_id="Asia/Kolkata")
     page.goto(WEB + "/")
     page.get_by_label("Email").fill("big@example.com")

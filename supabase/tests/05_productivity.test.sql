@@ -37,12 +37,15 @@ begin
   res := public.sync_push(phone, jsonb_build_array(
     test.op('habits', habit, '{"title": "Drink water", "target": 8, "unit": "glasses", "schedule": "daily", "reminder_time": "10:00"}', test.ts(0, phone, 3))));
   perform test.eq(res -> 'results' -> 0 ->> 'status', 'applied', 'a habit is created');
+  -- Each change needs a newer edit time than the last, or it is (rightly) stale.
+  n := 40;
   foreach s in array array['days:1,3,5', 'week:3', 'days:0'] loop
-    res := public.sync_push(phone, jsonb_build_array(test.op('habits', habit, jsonb_build_object('schedule', s), test.ts(0, phone, 4))));
+    n := n + 1;
+    res := public.sync_push(phone, jsonb_build_array(test.op('habits', habit, jsonb_build_object('schedule', s), test.ts(0, phone, n::int))));
     perform test.eq(res -> 'results' -> 0 ->> 'status', 'applied', format('the schedule %s is accepted', s));
   end loop;
   foreach s in array array['weekly', 'days:7', 'week:0', 'week:8', 'days:', ''] loop
-    res := public.sync_push(phone, jsonb_build_array(test.op('habits', habit, jsonb_build_object('schedule', s), test.ts(0, phone, 5))));
+    res := public.sync_push(phone, jsonb_build_array(test.op('habits', habit, jsonb_build_object('schedule', s), test.ts(0, phone, 50))));
     perform test.eq(res -> 'results' -> 0 ->> 'status', 'rejected', format('the schedule "%s" is refused', s));
   end loop;
   res := public.sync_push(phone, jsonb_build_array(test.op('habits', habit, '{"target": 0}', test.ts(0, phone, 6))));

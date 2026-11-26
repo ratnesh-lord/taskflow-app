@@ -54,7 +54,7 @@ ROUNDED = """() => [...document.querySelectorAll('*')].filter((el) => {
 WIDE = "() => document.documentElement.scrollWidth - window.innerWidth"
 
 with sync_playwright() as p:
-    browser = p.chromium.launch()
+    browser = p.chromium.launch(channel="chrome", headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 900}, timezone_id="Asia/Kolkata")
     page.goto(WEB + "/")
     page.get_by_label("Email").fill("desk@example.com")
