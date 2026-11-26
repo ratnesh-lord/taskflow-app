@@ -50,7 +50,7 @@ export type WeekReview = {
 /** The last seven days up to today, and the seven after it. */
 export function weekReview(data: Snapshot, now: Now, toLocal: ToLocalDate): WeekReview {
   const from = addDays(now.date, -6);
-  const done = completedItems(data).filter((i) => {
+  const done = completedItems(data, addDays(from, -1)).filter((i) => {
     const d = toLocal(i.completedAt!);
     return d >= from && d <= now.date;
   });

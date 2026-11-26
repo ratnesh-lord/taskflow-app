@@ -11,6 +11,7 @@ import { useTheme } from '@/state/theme';
 import { Button } from '@/ui/Button';
 import { Screen } from '@/ui/Screen';
 import { Text } from '@/ui/Text';
+import { useSidebar } from '@/ui/layout';
 import { FAB_SPACE, space, TAB_BAR_HEIGHT } from '@/ui/tokens';
 
 /**
@@ -32,6 +33,7 @@ function Gate() {
   const { colors } = useTheme();
   const segments = useSegments();
   const onTabs = (segments as string[]).includes('(tabs)');
+  const sidebar = useSidebar();
 
   if (state.status === 'loading') {
     return (
@@ -86,7 +88,7 @@ function Gate() {
           <Stack.Screen name="colours" />
           <Stack.Screen name="add" />
         </Stack>
-        <NoticeBar bottom={onTabs ? TAB_BAR_HEIGHT : 0} right={onTabs ? FAB_SPACE : 0} />
+        <NoticeBar bottom={onTabs && !sidebar ? TAB_BAR_HEIGHT : 0} right={onTabs ? FAB_SPACE : 0} />
       </QuickAddProvider>
     </GoogleProvider>
   );

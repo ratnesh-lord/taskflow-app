@@ -125,6 +125,9 @@ with sync_playwright() as p:
     page.goto(WEB + "/")
     expect(page.get_by_role("heading", name="TaskFlow", exact=True).last).to_be_visible()
     ok("a signed-out visitor lands on the sign-in screen")
+    scripts = page.evaluate("[...document.scripts].map(s => s.src).filter(Boolean)")
+    assert scripts and all(src.startswith(WEB + "/") for src in scripts), scripts
+    ok(f"the app's code loads from below {WEB}/ ({len(scripts)} script)")
     sign_in = button(page, "Sign in")
     expect(sign_in).to_be_disabled()
     ok("the Sign in button is off while the form is empty")

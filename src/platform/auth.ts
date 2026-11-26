@@ -53,10 +53,14 @@ function fail(error: SupabaseAuthError): AuthOutcome {
   return { ok: false, message: describeAuthError(error) };
 }
 
-/** Where Supabase sends the user back to: taskflow://auth-callback on the phone. */
+/**
+ * Where Supabase sends the user back to: taskflow://auth-callback on the
+ * phone; on the web, this site's auth-callback page, below its sub-path when
+ * it has one (EXPO_BASE_URL is set at build time from app.config.ts).
+ */
 export function getRedirectUrl(): string {
   if (Platform.OS === 'web') {
-    return `${window.location.origin}/auth-callback`;
+    return `${window.location.origin}${process.env.EXPO_BASE_URL ?? ''}/auth-callback`;
   }
   return Linking.createURL('auth-callback');
 }
