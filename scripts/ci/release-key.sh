@@ -87,8 +87,10 @@ case "${1:-}" in
     apksigner="$(ls -d "${tools}"/*/ 2>/dev/null | sort -V | tail -1)apksigner"
     [[ -x "${apksigner}" ]] || { echo "::error::apksigner not found under ${tools}"; exit 1; }
     certs="$("${apksigner}" verify --print-certs "${apk}")"
-    sha256="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<<"${certs}" | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//')"
-    sha1="$(sed -n 's/^Signer #1 certificate SHA-1 digest: //p' <<<"${certs}" | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//')"
+    # "Signer #1 certificate …" or, for an APK with only a v2 signature, "V2 Signer: certificate …".
+    digest() { sed -n "s/^.*[Ss]igner[^:]*:\{0,1\} certificate $1 digest: //p" <<<"${certs}" | head -1 | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//'; }
+    sha256="$(digest SHA-256)"
+    sha1="$(digest SHA-1)"
     [[ -n "${sha256}" && -n "${sha1}" ]] || { echo "::error::Could not read the APK's signature"; echo "${certs}"; exit 1; }
     if [[ "${expect}" == debug ]]; then
       want="${DEBUG_SHA1}"; got="${sha1}"
