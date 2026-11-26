@@ -9,6 +9,13 @@ Do [SETUP.md](SETUP.md) first: it creates the Supabase project, the database and
 | Android app | https://github.com/ratnesh-lord/taskflow-app/releases/download/latest-build/taskflow-latest.apk |
 | Web app | https://ratnesh-lord.github.io/taskflow-app/ |
 
+**The quickest order the first time:**
+1. Step 2: add the signing secrets.
+2. Step 3, points 1 and 2: turn on Pages.
+3. Step 4: the sign-in addresses.
+4. Merge the pull request that added this guide. That merge builds the signed APK and publishes the website by itself, so the "Run workflow" points below are only for later re-runs.
+5. Step 5: move your phone to the release build.
+
 ## 1. What happens on each merge to `main`
 
 1. **Apply database migrations** runs if the database changed, and updates your Supabase project.
