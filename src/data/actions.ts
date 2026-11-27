@@ -15,6 +15,7 @@ import { isScheduleText, MAX_TARGET, MAX_UNIT } from '@/core/habits';
 import type { MatrixMove } from '@/core/matrix';
 import type { QuickAdd, ReminderDraft } from '@/core/quick-add';
 import { currentOccurrence, type OccurrenceRecord, planCompletion, planMove, planSkip } from '@/core/recurrence';
+import { canDecline, canEdit } from '@/core/sharing';
 import type { TaskFilter } from '@/core/filters';
 import type { Priority, TaskStatus } from '@/core/types';
 import { isOpenStatus } from '@/core/types';
@@ -46,6 +47,12 @@ export type TaskFields = {
 
 export type TaskInput = Partial<TaskFields> & {
   title: string;
+  /** Share it with this group (src/core/sharing.ts). Group tasks have no project, category, goal, tags or links. */
+  groupId?: string | null;
+  /** In a group: who it is assigned to (null: nobody, so the creator has it). */
+  ownerId?: string | null;
+  /** In a group: only creator and owner see it. */
+  isPrivate?: boolean;
   tags?: string[];
   subtasks?: string[];
   reminders?: ReminderDraft[];
@@ -159,10 +166,25 @@ export class Actions {
     return localDateOf(this.now());
   }
 
-  private async task(tx: Tx, id: string): Promise<Row> {
+  /**
+   * A task that is about to be changed: it must exist and, in a group, be
+   * mine to change (creator or owner). `read` only checks that it exists.
+   */
+  private async task(tx: Tx, id: string, mode: 'edit' | 'read' = 'edit'): Promise<Row> {
     const row = await tx.get('tasks', id);
     if (!row || row.deleted_at) throw new InvalidInput('That task no longer exists.');
+    if (mode === 'edit' && !canEdit(toTask(row), this.store.userId)) {
+      throw new InvalidInput('Only the person who created this task or the person it is assigned to can change it.');
+    }
     return row;
+  }
+
+  private static readonly PERSONAL_ONLY = 'A group task has no tags, links or files: those stay personal.';
+
+  /** The task a subtask belongs to, checked as for task(). */
+  private async childTask(tx: Tx, table: 'subtasks', id: string): Promise<void> {
+    const child = await tx.get(table, id);
+    if (child?.task_id) await this.task(tx, String(child.task_id));
   }
 
   undo(log: UndoLog): Promise<void> {
@@ -177,12 +199,27 @@ export class Actions {
     const id = this.opts.newId();
     const { undo } = await this.store.transaction(async (tx) => {
       const columns = toColumns(input);
-      const organised = !!(input.projectId || input.categoryId || input.dueDate);
+      const inGroup = !!input.groupId;
+      if (inGroup) {
+        if (!(await this.isMember(tx, input.groupId!, this.store.userId))) throw new InvalidInput('You are not a member of that group.');
+        if (input.ownerId && !(await this.isMember(tx, input.groupId!, input.ownerId))) {
+          throw new InvalidInput('That person is not a member of the group.');
+        }
+        delete columns.project_id;
+        delete columns.category_id;
+        delete columns.goal_id;
+        columns.group_id = input.groupId;
+        columns.owner_id = input.ownerId ?? null;
+        columns.is_private = input.isPrivate === true;
+        columns.created_by = this.store.userId;
+      }
+      const organised = !!((!inGroup && (input.projectId || input.categoryId)) || input.dueDate);
       columns.status = input.status ?? (organised ? 'not_started' : 'inbox');
       columns.priority = input.priority ?? 'medium';
       columns.sort_order = this.now().getTime();
       if (columns.status === 'completed') columns.completed_at = this.now().toISOString();
       await tx.write('tasks', id, columns);
+      if (inGroup && (input.tags?.length || input.links?.length)) throw new InvalidInput(Actions.PERSONAL_ONLY);
       if (input.tags?.length) await this.writeTags(tx, id, input.tags);
       for (const [i, title] of (input.subtasks ?? []).entries()) {
         if (title.trim()) await tx.write('subtasks', this.opts.newId(), { task_id: id, title: title.trim(), sort_order: i });
@@ -194,7 +231,15 @@ export class Actions {
   }
 
   /** A task from a quick-add line. The project is matched by name, or created. */
-  async createFromQuickAdd(parsed: QuickAdd, defaults: Partial<TaskFields> = {}): Promise<{ id: string; undo: UndoLog }> {
+  async createFromQuickAdd(parsed: QuickAdd, defaults: Partial<TaskFields> & { groupId?: string } = {}): Promise<{ id: string; undo: UndoLog }> {
+    if (defaults.groupId) {
+      // Into a group: projects and tags are personal, so they are left out.
+      return this.createTask({
+        title: parsed.title, groupId: defaults.groupId, dueDate: parsed.dueDate ?? defaults.dueDate ?? null,
+        dueTime: parsed.dueTime ?? null, rrule: parsed.rrule, priority: parsed.priority ?? undefined, estimatedMinutes: parsed.estimatedMinutes,
+        reminders: parsed.reminders,
+      });
+    }
     let projectId = defaults.projectId ?? null;
     if (parsed.project) {
       const wanted = normaliseTagName(parsed.project).replace(/-/g, '');
@@ -229,6 +274,12 @@ export class Actions {
   private async patchTask(tx: Tx, id: string, fields: Partial<TaskFields>): Promise<void> {
     const current = toTask(await this.task(tx, id));
     const columns = toColumns(fields);
+    if (current.groupId) {
+      // Projects, categories and goals are personal.
+      delete columns.project_id;
+      delete columns.category_id;
+      delete columns.goal_id;
+    }
     // A task leaves the Inbox once it gets a project, a category or a date.
     if (current.status === 'inbox' && fields.status === undefined && (fields.projectId || fields.categoryId || fields.dueDate)) {
       columns.status = 'not_started';
@@ -241,7 +292,11 @@ export class Actions {
 
   async setTags(taskId: string, names: string[]): Promise<UndoLog> {
     const { undo } = await this.store.transaction(async (tx) => {
-      await this.task(tx, taskId);
+      const task = toTask(await this.task(tx, taskId));
+      if (task.groupId) {
+        if (names.length) throw new InvalidInput(Actions.PERSONAL_ONLY);
+        return;
+      }
       await this.writeTags(tx, taskId, names);
     });
     return undo;
@@ -296,7 +351,7 @@ export class Actions {
 
   async addLink(taskId: string, link: LinkInput): Promise<UndoLog> {
     const { undo } = await this.store.transaction(async (tx) => {
-      await this.task(tx, taskId);
+      if (toTask(await this.task(tx, taskId)).groupId) throw new InvalidInput(Actions.PERSONAL_ONLY);
       await this.writeLink(tx, taskId, link);
     });
     return undo;
@@ -326,11 +381,17 @@ export class Actions {
       patch.title = fields.title.trim();
     }
     if (fields.isCompleted !== undefined) patch.is_completed = fields.isCompleted;
-    return (await this.store.transaction((tx) => tx.write('subtasks', id, patch))).undo;
+    return (await this.store.transaction(async (tx) => {
+      await this.childTask(tx, 'subtasks', id);
+      await tx.write('subtasks', id, patch);
+    })).undo;
   }
 
   async deleteSubtask(id: string): Promise<UndoLog> {
-    return (await this.store.transaction((tx) => tx.remove('subtasks', id))).undo;
+    return (await this.store.transaction(async (tx) => {
+      await this.childTask(tx, 'subtasks', id);
+      await tx.remove('subtasks', id);
+    })).undo;
   }
 
   // ---- completing, skipping, moving ------------------------------------------------
@@ -479,7 +540,7 @@ export class Actions {
   async duplicate(taskId: string): Promise<{ id: string; undo: UndoLog }> {
     const copyId = this.opts.newId();
     const { undo } = await this.store.transaction(async (tx) => {
-      const task = toTask(await this.task(tx, taskId));
+      const task = toTask(await this.task(tx, taskId, 'read'));
       await tx.write('tasks', copyId, {
         ...toColumns({
           title: task.title, description: task.description, notes: task.notes, priority: task.priority,
@@ -509,6 +570,7 @@ export class Actions {
   async deleteTasks(taskIds: string[]): Promise<UndoLog> {
     const { undo } = await this.store.transaction(async (tx) => {
       for (const id of taskIds) {
+        await this.task(tx, id);
         for (const table of CHILD_TABLES) for (const child of await tx.find(table, 'task_id', id)) await tx.remove(table, child.id);
         await tx.remove('tasks', id);
       }
@@ -524,6 +586,73 @@ export class Actions {
     return undo;
   }
 
+
+  // ---------------------------------------------------------------------------
+  // Sharing with a group (src/core/sharing.ts)
+  // ---------------------------------------------------------------------------
+
+  /** Is this person an active member of the group, as far as this device knows? */
+  private async isMember(tx: Tx, groupId: string, userId: string): Promise<boolean> {
+    return (await tx.find('group_members', 'group_id', groupId)).some((m) => m.member_id === userId && m.status === 'active');
+  }
+
+  /**
+   * Move a personal task into a group, with its subtasks, reminders and
+   * repeat history. Its project, category, goal and tags are personal, so
+   * they are left behind. It cannot be moved out again.
+   */
+  async shareTask(taskId: string, groupId: string, opts: { ownerId?: string | null; isPrivate?: boolean } = {}): Promise<UndoLog> {
+    const { undo } = await this.store.transaction(async (tx) => {
+      const task = toTask(await this.task(tx, taskId));
+      if (task.groupId) throw new InvalidInput('This task is already in a group.');
+      if (!(await this.isMember(tx, groupId, this.store.userId))) throw new InvalidInput('You are not a member of that group.');
+      const owner = opts.ownerId ?? null;
+      if (owner && !(await this.isMember(tx, groupId, owner))) throw new InvalidInput('That person is not a member of the group.');
+      if ((await tx.find('attachments', 'task_id', taskId)).length) {
+        throw new InvalidInput('Remove the task\'s links and files first: they are personal and cannot be shared.');
+      }
+      for (const link of await tx.find('task_tags', 'task_id', taskId)) await tx.remove('task_tags', link.id);
+      await tx.write('tasks', taskId, {
+        group_id: groupId, owner_id: owner, is_private: opts.isPrivate === true, created_by: task.createdBy ?? this.store.userId,
+        project_id: null, category_id: null, goal_id: null,
+      });
+      for (const table of ['subtasks', 'reminders', 'task_occurrences'] as const) {
+        for (const child of await tx.find(table, 'task_id', taskId)) await tx.write(table, child.id, { group_id: groupId });
+      }
+    });
+    return undo;
+  }
+
+  /** Assign a group task to a member, or to nobody (back to its creator). */
+  async assignTask(taskId: string, ownerId: string | null): Promise<UndoLog> {
+    const { undo } = await this.store.transaction(async (tx) => {
+      const task = toTask(await this.task(tx, taskId));
+      if (!task.groupId) throw new InvalidInput('Only a task in a group can be assigned.');
+      if (ownerId && !(await this.isMember(tx, task.groupId, ownerId))) throw new InvalidInput('That person is not a member of the group.');
+      await tx.write('tasks', taskId, { owner_id: ownerId === task.createdBy ? null : ownerId });
+    });
+    return undo;
+  }
+
+  /** Hand a task assigned to me back to the person who created it. */
+  async declineTask(taskId: string): Promise<UndoLog> {
+    const { undo } = await this.store.transaction(async (tx) => {
+      const task = toTask(await this.task(tx, taskId));
+      if (!canDecline(task, this.store.userId)) throw new InvalidInput('Only a task someone else assigned to you can be handed back.');
+      await tx.write('tasks', taskId, { owner_id: null });
+    });
+    return undo;
+  }
+
+  /** In a group: private means only its creator and the person it is assigned to see it. */
+  async setTaskPrivate(taskId: string, isPrivate: boolean): Promise<UndoLog> {
+    const { undo } = await this.store.transaction(async (tx) => {
+      const task = toTask(await this.task(tx, taskId));
+      if (!task.groupId) throw new InvalidInput('Only a task in a group can be private; your own tasks are always private.');
+      await tx.write('tasks', taskId, { is_private: isPrivate });
+    });
+    return undo;
+  }
 
   // ---------------------------------------------------------------------------
   // Goals
@@ -663,7 +792,7 @@ export class Actions {
     const id = this.opts.newId();
     const now = this.now();
     const { undo } = await this.store.transaction(async (tx) => {
-      if (input.taskId) await this.task(tx, input.taskId);
+      if (input.taskId) await this.task(tx, input.taskId, 'read');
       const open = [...(await tx.find('focus_sessions', 'kind', 'focus')), ...(await tx.find('focus_sessions', 'kind', 'break'))];
       for (const r of open) {
         const end = Date.parse(String(r.started_at)) + Number(r.planned_minutes) * 60_000;
@@ -808,7 +937,7 @@ export class Actions {
   /** A file uploaded to Google Drive, attached to a task as a Drive link. */
   async addDriveFile(taskId: string, file: { url: string; name: string; mimeType: string | null; size: number | null }): Promise<UndoLog> {
     const { undo } = await this.store.transaction(async (tx) => {
-      await this.task(tx, taskId);
+      if (toTask(await this.task(tx, taskId)).groupId) throw new InvalidInput(Actions.PERSONAL_ONLY);
       await tx.write('attachments', this.opts.newId(), {
         task_id: taskId, kind: 'drive', file_url: file.url, file_name: file.name.slice(0, 500), mime_type: file.mimeType, size_bytes: file.size,
       });

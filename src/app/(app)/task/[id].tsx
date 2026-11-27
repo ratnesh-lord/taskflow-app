@@ -8,6 +8,7 @@ import { CLIPART_BY_KEY } from '@/core/clipart';
 import { dayLabel, type LocalDate, type LocalTime, localDateOf, minutesToTime, shortDate } from '@/core/dates';
 import type { ReminderDraft } from '@/core/quick-add';
 import { alignStart, describeRule, parseRule } from '@/core/recurrence';
+import { canDecline, canEdit, personLabel } from '@/core/sharing';
 import { PRIORITIES, PRIORITY_LABEL, type Priority, STATUS_LABEL, STATUSES, type TaskStatus } from '@/core/types';
 import { Swatch } from '@/components/ColorSheet';
 import { DateSheet, type DateScope } from '@/components/DateSheet';
@@ -19,6 +20,7 @@ import { TagSheet } from '@/components/TagSheet';
 import { TaskPicture } from '@/components/TaskPicture';
 import { PriorityMark } from '@/components/TaskRow';
 import type { TaskFields } from '@/data/actions';
+import { findTask } from '@/data/snapshot';
 import { pickAndUploadPicture } from '@/platform/pictures';
 import { useData, useNotice, useRun } from '@/state/data';
 import { useGoogle } from '@/state/google';
@@ -32,12 +34,15 @@ import { Checkbox } from '@/ui/Checkbox';
 import { EditableText } from '@/ui/EditableText';
 import { duration, showTime } from '@/ui/format';
 import { Icon } from '@/ui/Icon';
+import { Notice } from '@/ui/Notice';
 import { FieldRow, MenuRow, SectionTitle } from '@/ui/Row';
 import { Screen } from '@/ui/Screen';
 import { Text } from '@/ui/Text';
 import { space, TOUCH, typography } from '@/ui/tokens';
 
-type SheetName = 'due' | 'repeat' | 'reminders' | 'status' | 'priority' | 'project' | 'category' | 'tags' | 'estimate' | 'picture' | 'goal' | null;
+type SheetName =
+  | 'due' | 'repeat' | 'reminders' | 'status' | 'priority' | 'project' | 'category' | 'tags' | 'estimate' | 'picture' | 'goal'
+  | 'share' | 'assign' | 'privacy' | null;
 
 const NONE = '__none__';
 const ESTIMATES = [5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
@@ -71,7 +76,7 @@ export default function TaskScreen() {
   const [subtask, setSubtask] = useState('');
   const [link, setLink] = useState('');
 
-  const task = data.tasks.find((t) => t.id === id);
+  const task = findTask(data, id);
   const records = useMemo(() => data.occurrences.get(id) ?? [], [data, id]);
   const item = useMemo(() => (task ? itemOf(task, records, now) : null), [task, records, now]);
 
@@ -91,6 +96,14 @@ export default function TaskScreen() {
 
   const rule = parseRule(task.rrule);
   const repeating = !!rule && !!task.dueDate;
+  // Sharing (src/core/sharing.ts): in a group, only its creator and the person it is assigned to change it.
+  const me = data.me.userId;
+  const group = task.groupId ? data.groups.find((g) => g.id === task.groupId) : undefined;
+  const inGroup = !!task.groupId;
+  const ro = !canEdit(task, me);
+  const people = new Map((group?.members ?? []).map((m) => [m.memberId, m]));
+  const who = (userId: string | null | undefined) => (userId === me ? 'You' : userId ? personLabel(people.get(userId)) : 'Nobody');
+  const edit = (open: SheetName) => (ro ? undefined : () => setSheet(open));
   const subtasks = data.subtasks.get(id) ?? [];
   const links = data.links.get(id) ?? [];
   const tagNames = (data.taskTags.get(id) ?? []).map((t) => data.tags.find((x) => x.id === t)?.name ?? '').filter(Boolean);
@@ -125,7 +138,7 @@ export default function TaskScreen() {
       <BackHeader title={project ? project.name : STATUS_LABEL[task.status]} />
 
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.xs, marginLeft: -space.md }}>
-        <Checkbox checked={!item.open} alert={item.overdue} size={24} label={item.open ? `Complete: ${task.title}` : `Reopen: ${task.title}`} onPress={toggle} />
+        <Checkbox checked={!item.open} alert={item.overdue} size={24} disabled={ro} label={item.open ? `Complete: ${task.title}` : `Reopen: ${task.title}`} onPress={toggle} />
         <View style={{ flex: 1, paddingTop: 4 }}>
           <EditableText
             key={`title-${id}`}
@@ -135,11 +148,38 @@ export default function TaskScreen() {
             multiline
             maxLength={500}
             variant="heading"
+            editable={!ro}
             submitBehavior="blurAndSubmit"
             onSave={(title) => title.trim() !== task.title && update({ title: title.trim() })}
           />
         </View>
       </View>
+
+      {inGroup ? (
+        <View>
+          <FieldRow label="Group" value={group?.name ?? 'A group you have left'} onPress={group ? () => router.push(`/group/${group.id}`) : undefined} />
+          <FieldRow label="Assigned to" value={who(task.ownerId ?? task.createdBy)} onPress={edit('assign')} />
+          <FieldRow label="Created by" value={who(task.createdBy)} />
+          <FieldRow
+            label="Who sees it"
+            value={task.isPrivate ? 'Only its creator and the person it is assigned to' : 'Everyone in the group'}
+            onPress={edit('privacy')}
+            last
+          />
+          {ro ? (
+            <Notice>{`Only ${who(task.createdBy)} or the person it is assigned to can change this task. You can look, and time a focus session on it.`}</Notice>
+          ) : null}
+          {canDecline(task, me) ? (
+            <View style={{ alignItems: 'flex-start', paddingTop: space.sm }}>
+              <Button
+                variant="secondary"
+                label={`Hand back to ${who(task.createdBy)}`}
+                onPress={() => void run(() => actions.declineTask(id), `Handed back to ${who(task.createdBy)}`)}
+              />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       {rule && repeating && item.occurrence ? (
         <View style={[styles.banner, { borderColor: colors.divider }]}>
@@ -153,36 +193,40 @@ export default function TaskScreen() {
       ) : null}
 
       <View>
-        <FieldRow label="Due" value={dueText} placeholder="No date" valueColor={item.overdue ? 'overdue' : 'text'} onPress={() => setSheet('due')} />
-        <FieldRow label="Repeat" value={rule && task.dueDate ? describeRule(rule, task.dueDate) : null} placeholder="Does not repeat" onPress={() => setSheet('repeat')} />
+        <FieldRow label="Due" value={dueText} placeholder="No date" valueColor={item.overdue ? 'overdue' : 'text'} onPress={edit('due')} />
+        <FieldRow label="Repeat" value={rule && task.dueDate ? describeRule(rule, task.dueDate) : null} placeholder="Does not repeat" onPress={edit('repeat')} />
         <FieldRow
           label="Reminders"
           value={drafts.length ? drafts.map((r) => reminderText(r, now.date)).join(', ') : null}
           placeholder="None"
-          onPress={() => setSheet('reminders')}
+          onPress={edit('reminders')}
         />
-        <FieldRow label="Status" value={STATUS_LABEL[task.status]} onPress={() => setSheet('status')} />
-        <FieldRow label="Priority" value={PRIORITY_LABEL[task.priority]} onPress={() => setSheet('priority')}>
+        <FieldRow label="Status" value={STATUS_LABEL[task.status]} onPress={edit('status')} />
+        <FieldRow label="Priority" value={PRIORITY_LABEL[task.priority]} onPress={edit('priority')}>
           <PriorityMark priority={task.priority} />
           <Text variant="smallStrong" style={{ flex: 1 }}>
             {PRIORITY_LABEL[task.priority]}
           </Text>
         </FieldRow>
-        <FieldRow label="Project" value={project?.name} placeholder="None" onPress={() => setSheet('project')}>
-          {project ? (
-            <>
-              {isColorName(project.color) ? <Swatch name={project.color} size={10} /> : null}
-              <Text variant="smallStrong" style={{ flex: 1 }}>
-                {project.name}
-              </Text>
-            </>
-          ) : undefined}
-        </FieldRow>
-        <FieldRow label="Goal" value={goal?.title} placeholder="None" onPress={() => setSheet('goal')} />
-        <FieldRow label="Category" value={category?.name} placeholder="None" onPress={() => setSheet('category')} />
-        <FieldRow label="Tags" value={tagNames.length ? tagNames.map((t) => `#${t}`).join(' ') : null} placeholder="None" onPress={() => setSheet('tags')} />
-        <FieldRow label="Estimate" value={task.estimatedMinutes ? duration(task.estimatedMinutes) : null} placeholder="None" onPress={() => setSheet('estimate')} />
-        <FieldRow label="Picture" value={pictureText(task.icon)} placeholder="None" onPress={() => setSheet('picture')} last>
+        {inGroup ? null : (
+          <>
+            <FieldRow label="Project" value={project?.name} placeholder="None" onPress={() => setSheet('project')}>
+              {project ? (
+                <>
+                  {isColorName(project.color) ? <Swatch name={project.color} size={10} /> : null}
+                  <Text variant="smallStrong" style={{ flex: 1 }}>
+                    {project.name}
+                  </Text>
+                </>
+              ) : undefined}
+            </FieldRow>
+            <FieldRow label="Goal" value={goal?.title} placeholder="None" onPress={() => setSheet('goal')} />
+            <FieldRow label="Category" value={category?.name} placeholder="None" onPress={() => setSheet('category')} />
+            <FieldRow label="Tags" value={tagNames.length ? tagNames.map((t) => `#${t}`).join(' ') : null} placeholder="None" onPress={() => setSheet('tags')} />
+          </>
+        )}
+        <FieldRow label="Estimate" value={task.estimatedMinutes ? duration(task.estimatedMinutes) : null} placeholder="None" onPress={edit('estimate')} />
+        <FieldRow label="Picture" value={pictureText(task.icon)} placeholder="None" onPress={edit('picture')} last>
           {task.icon ? (
             <>
               <TaskPicture icon={task.icon} size={22} color={look.taskHex(task)} />
@@ -201,6 +245,7 @@ export default function TaskScreen() {
             <View key={s.id} style={[styles.subRow, { borderBottomColor: colors.divider }]}>
               <Checkbox
                 checked={s.isCompleted}
+                disabled={ro}
                 label={`${s.isCompleted ? 'Untick' : 'Tick'} subtask: ${s.title}`}
                 onPress={() => void run(() => actions.updateSubtask(s.id, { isCompleted: !s.isCompleted }))}
               />
@@ -208,22 +253,25 @@ export default function TaskScreen() {
                 <EditableText
                   key={`sub-${s.id}`}
                   accessibilityLabel="Subtask"
+                  editable={!ro}
                   value={s.title}
                   required
                   maxLength={500}
                   onSave={(title) => title.trim() !== s.title && void run(() => actions.updateSubtask(s.id, { title }))}
                 />
               </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Delete subtask: ${s.title}`}
-                onPress={() => void run(() => actions.deleteSubtask(s.id), 'Subtask deleted')}
-                style={styles.iconHit}>
-                <Icon name="close" color={colors.textSecondary} size={18} />
-              </Pressable>
+              {ro ? null : (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete subtask: ${s.title}`}
+                  onPress={() => void run(() => actions.deleteSubtask(s.id), 'Subtask deleted')}
+                  style={styles.iconHit}>
+                  <Icon name="close" color={colors.textSecondary} size={18} />
+                </Pressable>
+              )}
             </View>
           ))}
-          <View style={[styles.subRow, { borderBottomColor: colors.divider }]}>
+          {ro ? null : <View style={[styles.subRow, { borderBottomColor: colors.divider }]}>
             <View style={styles.iconHit}>
               <Icon name="plus" color={colors.textSecondary} size={18} />
             </View>
@@ -244,7 +292,7 @@ export default function TaskScreen() {
               }}
               style={[typography.body, { flex: 1, color: colors.text, minHeight: TOUCH }]}
             />
-          </View>
+          </View>}
         </View>
       </View>
 
@@ -256,7 +304,8 @@ export default function TaskScreen() {
             accessibilityLabel="Description"
             value={task.description}
             multiline
-            placeholder="What is this about?"
+            placeholder={ro ? 'No description' : 'What is this about?'}
+            editable={!ro}
             maxLength={10000}
             onSave={(description) => description !== task.description && update({ description })}
           />
@@ -271,15 +320,16 @@ export default function TaskScreen() {
             accessibilityLabel="Notes"
             value={task.notes}
             multiline
-            placeholder="Anything to remember while working on it"
+            placeholder={ro ? 'No notes' : 'Anything to remember while working on it'}
+            editable={!ro}
             maxLength={20000}
             onSave={(notes) => notes !== task.notes && update({ notes })}
           />
         </View>
       </View>
 
-      <View>
-        <SectionTitle>Links</SectionTitle>
+      {inGroup && !links.length ? null : <View>
+        <SectionTitle>{inGroup ? 'Links (only you see these)' : 'Links'}</SectionTitle>
         <View style={{ borderTopWidth: 1, borderTopColor: colors.divider }}>
           {links.map((l) => (
             <View key={l.id} style={[styles.subRow, { borderBottomColor: colors.divider }]}>
@@ -296,7 +346,7 @@ export default function TaskScreen() {
               </Pressable>
             </View>
           ))}
-          <View style={[styles.subRow, { borderBottomColor: colors.divider }]}>
+          {inGroup ? null : <View style={[styles.subRow, { borderBottomColor: colors.divider }]}>
             <View style={styles.iconHit}>
               <Icon name="plus" color={colors.textSecondary} size={18} />
             </View>
@@ -318,8 +368,8 @@ export default function TaskScreen() {
               }}
               style={[typography.small, { flex: 1, color: colors.text, minHeight: TOUCH }]}
             />
-          </View>
-          {google.available ? (
+          </View>}
+          {google.available && !inGroup ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Attach a file from this device, stored in Google Drive"
@@ -341,7 +391,7 @@ export default function TaskScreen() {
             </Pressable>
           ) : null}
         </View>
-      </View>
+      </View>}
 
       {history.length ? (
         <View>
@@ -352,7 +402,7 @@ export default function TaskScreen() {
               <Text variant="small" style={{ flex: 1 }}>
                 {shortDate(h.date, now.date)}
               </Text>
-              <Button variant="secondary" label="Undo" onPress={() => void run(() => actions.reopen(id, h.date), `Reopened ${shortDate(h.date, now.date)}`)} />
+              {ro ? null : <Button variant="secondary" label="Undo" onPress={() => void run(() => actions.reopen(id, h.date), `Reopened ${shortDate(h.date, now.date)}`)} />}
             </View>
           ))}
         </View>
@@ -360,30 +410,33 @@ export default function TaskScreen() {
 
       <View>
         <SectionTitle>Actions</SectionTitle>
-        {repeating && item.open ? (
+        {!inGroup && data.groups.length ? <MenuRow icon="people" label="Share with a group" onPress={() => setSheet('share')} /> : null}
+        {repeating && item.open && !ro ? (
           <MenuRow icon="skip" label="Skip this time" detail={item.occurrence ? shortDate(item.occurrence.date, now.date) : undefined} onPress={() => void run(() => actions.skipOccurrence(id), 'Skipped')} />
         ) : null}
         {item.open ? <MenuRow icon="timer" label="Focus on this task" onPress={() => router.push(`/focus?task=${id}`)} /> : null}
         <MenuRow
           icon="copy"
-          label="Duplicate"
+          label={inGroup ? 'Duplicate as my own task' : 'Duplicate'}
           onPress={async () => {
             const result = await run(() => actions.duplicate(id), 'Duplicated');
             if (result) router.replace(`/task/${result.id}`);
           }}
         />
-        <MenuRow
-          icon="trash"
-          label="Delete"
-          danger
-          onPress={async () => {
-            const done = await run(() => actions.deleteTasks([id]), `Deleted: ${task.title}`);
-            if (done) {
-              if (router.canGoBack()) router.back();
-              else router.replace('/');
-            }
-          }}
-        />
+        {ro ? null : (
+          <MenuRow
+            icon="trash"
+            label={inGroup ? 'Delete for everyone in the group' : 'Delete'}
+            danger
+            onPress={async () => {
+              const done = await run(() => actions.deleteTasks([id]), `Deleted: ${task.title}`);
+              if (done) {
+                if (router.canGoBack()) router.back();
+                else router.replace('/');
+              }
+            }}
+          />
+        )}
       </View>
 
       <Text variant="caption" color="textSecondary">
@@ -554,6 +607,51 @@ export default function TaskScreen() {
         onPick={(value) => {
           close();
           update({ estimatedMinutes: value === NONE ? null : Number(value) });
+        }}
+      />
+      <OptionSheet<string>
+        visible={sheet === 'share'}
+        title="Share with a group"
+        value={null}
+        options={data.groups.map((g) => ({
+          value: g.id, label: g.name, detail: 'Everyone in it will see this task. Its project, goal and tags stay yours and are removed from it.',
+        }))}
+        onClose={close}
+        onPick={(groupId) => {
+          close();
+          const name = data.groups.find((g) => g.id === groupId)?.name ?? 'the group';
+          void run(() => actions.shareTask(id, groupId), `Shared with ${name}`);
+        }}
+      />
+      <OptionSheet<string>
+        visible={sheet === 'assign'}
+        title="Assigned to"
+        value={task.ownerId ?? task.createdBy ?? NONE}
+        options={(group?.members ?? [])
+          .filter((m) => m.status === 'active')
+          .map((m) => ({
+            value: m.memberId,
+            label: m.memberId === me ? `You (${personLabel(m)})` : personLabel(m),
+            detail: m.memberId === task.createdBy ? 'Created it' : undefined,
+          }))}
+        onClose={close}
+        onPick={(ownerId) => {
+          close();
+          void run(() => actions.assignTask(id, ownerId), `Assigned to ${who(ownerId)}`);
+        }}
+      />
+      <OptionSheet<'group' | 'private'>
+        visible={sheet === 'privacy'}
+        title="Who sees it"
+        value={task.isPrivate ? 'private' : 'group'}
+        options={[
+          { value: 'group', label: 'Everyone in the group', detail: 'Only its creator and the person it is assigned to can change it' },
+          { value: 'private', label: 'Only its creator and the person it is assigned to', detail: 'Others in the group do not see it at all' },
+        ]}
+        onClose={close}
+        onPick={(v) => {
+          close();
+          void run(() => actions.setTaskPrivate(id, v === 'private'), v === 'private' ? 'Now private' : 'Visible to the group');
         }}
       />
     </Screen>

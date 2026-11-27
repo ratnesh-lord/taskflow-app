@@ -18,11 +18,21 @@ export function useRowInfo(): (item: TaskItem) => RowInfo {
     const projects = new Map(data.projects.map((p) => [p.id, p.name]));
     const tags = new Map(data.tags.map((t) => [t.id, t.name]));
     const reminded = new Set(data.reminders.filter((r) => r.isActive).map((r) => r.taskId));
+    const groups = new Map(data.groups.map((g) => [g.id, g]));
+    // A group task shows its group, and who has it when that is someone else.
+    const groupText = (t: TaskItem['task']): string | null => {
+      const g = t.groupId ? groups.get(t.groupId) : undefined;
+      if (!g) return null;
+      const holder = t.ownerId ?? t.createdBy;
+      if (!holder || holder === data.me.userId) return g.name;
+      const m = g.members.find((x) => x.memberId === holder);
+      return `${g.name} · ${m?.displayName || (m?.username ? `@${m.username}` : 'someone')}`;
+    };
     return (item: TaskItem): RowInfo => {
       const id = item.task.id;
       const subs = data.subtasks.get(id) ?? [];
       return {
-        projectName: item.task.projectId ? projects.get(item.task.projectId) ?? null : null,
+        projectName: item.task.groupId ? groupText(item.task) : item.task.projectId ? projects.get(item.task.projectId) ?? null : null,
         tagNames: (data.taskTags.get(id) ?? []).map((t) => tags.get(t) ?? '').filter(Boolean),
         subtasks: { done: subs.filter((s) => s.isCompleted).length, total: subs.length },
         hasReminder: reminded.has(id),

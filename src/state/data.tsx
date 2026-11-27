@@ -3,6 +3,10 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { AppState } from 'react-native';
 
 import { Actions, InvalidInput } from '@/data/actions';
+import type { AssignedNotice } from '@/core/alarms';
+import { checkAssignments } from '@/data/assignments';
+import type { GroupService } from '@/data/groups';
+import { groupService } from '@/platform/groups';
 import { openExpoDb } from '@/data/expo-db';
 import { type DataSnapshot, loadSnapshot } from '@/data/snapshot';
 import { type SyncReason, SyncScheduler, type SyncStatus } from '@/data/scheduler';
@@ -66,6 +70,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [syncStored, setSyncStored] = useState<{ userId: string; sync: SyncState } | null>(null);
   const sync: SyncState = syncStored && syncStored.userId === userId ? syncStored.sync : IDLE_SYNC;
 
+  const dismiss = useCallback(() => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(null);
+  }, []);
+
+  const notify = useCallback<DataValue['notify']>((message, options) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice({ id: Date.now(), message, tone: options?.tone ?? 'info', undo: options?.undo });
+    noticeTimer.current = setTimeout(() => setNotice(null), options?.undo ? 6000 : 4000);
+  }, []);
+
+
   useEffect(() => {
     if (!userId) return;
     let alive = true;
@@ -80,6 +96,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // Notifications and widgets: replanned a second after the data settles; taps on notifications
     // and widgets taken in first.
     let latest: DataSnapshot | null = null;
+    let assigned: AssignedNotice[] = [];
     let tapsTakenAt = Date.now();
     let planTimer: ReturnType<typeof setTimeout> | null = null;
     const planSoon = () => {
@@ -87,7 +104,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (planTimer) clearTimeout(planTimer);
       planTimer = setTimeout(() => {
         planTimer = null;
-        if (latest && alive) replan(latest, tapsTakenAt).catch(() => {});
+        if (latest && alive) replan(latest, tapsTakenAt, assigned).catch(() => {});
       }, 1000);
     };
     const takeTaps = async (actions: Actions) => {
@@ -112,6 +129,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const data = await loadSnapshot(store!);
           if (alive) setState({ status: 'ready', data, actions });
           latest = data;
+          // Group tasks someone has just assigned to me: a message here, a notification on the phone.
+          const found = await checkAssignments(store!, data, Date.now()).catch(() => null);
+          if (found) {
+            assigned = found.notices;
+            const [first] = found.fresh;
+            if (first && alive) {
+              notify(found.fresh.length === 1 ? `${first.by} assigned you “${first.task.title}”` : `${found.fresh.length} tasks were assigned to you`);
+            }
+          }
           planSoon();
         } catch (e) {
           if (alive) setState({ status: 'error', message: e instanceof Error ? e.message : String(e) });
@@ -246,18 +272,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       for (const c of cleanupsOuter) c();
       store?.close().catch(() => {});
     };
-  }, [userId]);
-
-  const dismiss = useCallback(() => {
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    setNotice(null);
-  }, []);
-
-  const notify = useCallback<DataValue['notify']>((message, options) => {
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    setNotice({ id: Date.now(), message, tone: options?.tone ?? 'info', undo: options?.undo });
-    noticeTimer.current = setTimeout(() => setNotice(null), options?.undo ? 6000 : 4000);
-  }, []);
+  }, [userId, notify]);
 
   const value = useMemo(() => ({ state, sync, notice, notify, dismiss }), [state, sync, notice, notify, dismiss]);
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
@@ -313,5 +328,31 @@ export function useRun() {
       }
     },
     [notify],
+  );
+}
+
+export type GroupCallResult<T> = { ok: true; value: T } | { ok: false };
+
+/**
+ * Runs a group change on the server (src/platform/groups.ts), shows how it
+ * went, and syncs so the change arrives here. When it fails, the message
+ * says why and the result is { ok: false }.
+ */
+export function useGroupCall() {
+  const { notify, sync } = useDataContext();
+  const { syncNow } = sync;
+  return useCallback(
+    async <T,>(work: (service: GroupService) => Promise<T>, message?: string): Promise<GroupCallResult<T>> => {
+      try {
+        const value = await work(groupService);
+        if (message) notify(message);
+        syncNow();
+        return { ok: true, value };
+      } catch (e) {
+        notify(e instanceof Error ? e.message : String(e), { tone: 'error' });
+        return { ok: false };
+      }
+    },
+    [notify, syncNow],
   );
 }

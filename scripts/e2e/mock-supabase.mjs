@@ -7,9 +7,11 @@
 //                back with the error after the # (as Supabase does when it can no longer
 //                tell which flow the link belonged to).
 //   /realtime/v1/websocket  a small Realtime server: it speaks enough of the Phoenix
-//                protocol for postgres_changes on public.sync_state, polls that table in
-//                the real database, and sends a change to every subscriber whose sign-in
-//                matches the row's user_id filter (as row-level security would).
+//                protocol for postgres_changes on public.sync_state and
+//                public.group_sync_state, polls those tables in the real database, and
+//                sends a change to every subscriber allowed to see the row (its own
+//                sync_state row; the counters of groups it is an active member of), as
+//                row-level security would.
 //   /rest/v1/*   forwards each call to a REAL Postgres database that has the project's
 //                migrations applied, as the signed-in user, so row-level security and the
 //                sync functions run exactly as they would on Supabase
@@ -253,7 +255,14 @@ const server = http.createServer((req, res) => {
           })
           .join(', ');
         const out = asUser(subjectOf(req), `select public.${rpc[1]}(${args});`);
-        return out === '' ? send(res, 204) : send(res, 200, out);
+        if (out === '') return send(res, 204);
+        // jsonb comes back as JSON already; text and uuid results are sent as JSON strings, as PostgREST does.
+        try {
+          JSON.parse(out);
+          return send(res, 200, out);
+        } catch {
+          return send(res, 200, JSON.stringify(out));
+        }
       }
       if (url.pathname === '/rest/v1/devices' && req.method === 'DELETE') {
         const id = /^eq\.([0-9a-f-]{36})$/.exec(url.searchParams.get('id') ?? '');
@@ -264,8 +273,10 @@ const server = http.createServer((req, res) => {
 
       return send(res, 404, { message: `mock-supabase has no route for ${req.method} ${url.pathname}` });
     } catch (error) {
-      const message = String(error.stderr || error.message || error).trim();
-      console.log(`  -> error: ${message.split('\n')[0]}`);
+      const raw = String(error.stderr || error.message || error).trim();
+      // PostgREST sends just the database's message, without psql's "ERROR:" and CONTEXT lines.
+      const message = /ERROR:\s+(.*)/.exec(raw)?.[1] ?? raw;
+      console.log(`  -> error: ${message}`);
       const denied = /permission denied|row-level security/.test(message);
       return send(res, denied ? 403 : 400, { message, code: denied ? '42501' : 'P0001' });
     }
@@ -310,6 +321,9 @@ sockets.on('connection', (ws) => {
       if (change.table === 'sync_state' && m && tokenUser === m[1]) {
         subscriptions.add({ ws, topic, joinRef, bindingId: id, userId: m[1] });
       }
+      if (change.table === 'group_sync_state' && tokenUser) {
+        subscriptions.add({ ws, topic, joinRef, bindingId: id, userId: tokenUser, groups: true });
+      }
     }
     send(joinRef, ref, topic, 'phx_reply', { status: 'ok', response: { postgres_changes: answered } });
   });
@@ -326,10 +340,44 @@ function subjectOfToken(token) {
   }
 }
 
+// Watch group_sync_state too: each subscriber hears about the groups it is an active member of.
+const lastGroupRev = new Map();
+setInterval(() => {
+  const watchers = [...subscriptions].filter((sub) => sub.groups);
+  if (watchers.length === 0) return;
+  let rows;
+  try {
+    rows = JSON.parse(
+      sql(`select coalesce(json_agg(json_build_object('group_id', s.group_id, 'rev', s.rev, 'origin_device', s.origin_device,
+                  'members', (select json_agg(m.member_id) from public.group_members m
+                               where m.group_id = s.group_id and m.status = 'active' and m.deleted_at is null))), '[]')
+             from public.group_sync_state s`) || '[]',
+    );
+  } catch {
+    return;
+  }
+  for (const row of rows) {
+    if (lastGroupRev.get(row.group_id) === row.rev) continue;
+    lastGroupRev.set(row.group_id, row.rev);
+    for (const sub of watchers) {
+      if (!(row.members ?? []).includes(sub.userId) || sub.ws.readyState !== 1) continue;
+      const record = { group_id: row.group_id, rev: row.rev, origin_device: row.origin_device };
+      sub.ws.send(JSON.stringify([sub.joinRef, null, sub.topic, 'postgres_changes', {
+        ids: [sub.bindingId],
+        data: {
+          type: 'UPDATE', schema: 'public', table: 'group_sync_state', commit_timestamp: new Date().toISOString(), errors: null,
+          columns: [{ name: 'group_id', type: 'uuid' }, { name: 'rev', type: 'int8' }, { name: 'origin_device', type: 'uuid' }],
+          record, old_record: { group_id: row.group_id },
+        },
+      }]));
+    }
+  }
+}, 250);
+
 // Watch sync_state the way Supabase's replication would, a few times a second.
 const lastRev = new Map();
 setInterval(() => {
-  const users = [...new Set([...subscriptions].map((sub) => sub.userId))];
+  const users = [...new Set([...subscriptions].filter((sub) => !sub.groups).map((sub) => sub.userId))];
   if (users.length === 0) return;
   let rows;
   try {
@@ -345,7 +393,7 @@ setInterval(() => {
     lastRev.set(row.user_id, row.rev);
     if (first) continue; // only changes after someone started watching
     for (const sub of subscriptions) {
-      if (sub.userId !== row.user_id || sub.ws.readyState !== 1) continue;
+      if (sub.groups || sub.userId !== row.user_id || sub.ws.readyState !== 1) continue;
       sub.ws.send(JSON.stringify([sub.joinRef, null, sub.topic, 'postgres_changes', {
         ids: [sub.bindingId],
         data: {

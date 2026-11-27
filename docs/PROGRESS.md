@@ -510,6 +510,93 @@ A phone may run the app's JavaScript several times slower than these machines (a
 
 Do [DEPLOY.md](DEPLOY.md) steps 2 to 5, in order. This change adds nothing to the database.
 
+## Added after Phase 10: usernames, groups, assigned and private tasks (code complete; needs the database update and a phone check)
+
+You asked for:
+
+- usernames for everyone;
+- tasks with a creator and an owner (the person it is assigned to);
+- assigning only within groups (connections);
+- an option to keep a task private.
+
+Your choices:
+
+- creator and owner both have every right over the task;
+- everyone in a group sees its tasks, except private ones;
+- the group's creator manages its members.
+
+### What was done
+
+- **Usernames.**
+  - Chosen under **More**, then Account: 3 to 20 lower-case letters, digits or `_`, and unique.
+  - Other people only ever see a username and a display name, never an email address.
+  - Looking someone up needs their exact username; there is no browsing or partial search.
+- **Groups.**
+  - **More > Groups** lists your groups and open invitations.
+  - The creator owns the group. The owner invites by username, can make admins, and can remove anyone else. Admins can invite people and remove ordinary members.
+  - An invitation waits until the person taps **Join**.
+  - Anyone but the owner can leave. The owner can delete the group with all its tasks.
+- **Group tasks.**
+  - Add one with **+** on a group's screen, or move a task of your own in with **Share with a group**.
+  - Each task shows **Group**, **Assigned to**, **Created by** and **Who sees it**.
+  - Only its creator and its owner can change it. Others see it read-only, with a note saying who can change it.
+  - The owner can **Hand back** a task to its creator.
+  - **Private:** only creator and owner see it. Other members' devices are told only that a hidden row exists, and remove it.
+- **Where assigned tasks go.**
+  - A task assigned to you joins your Today, Upcoming, widgets and analytics. Only you get its reminders.
+  - When someone assigns you a task, TaskFlow shows a message, and on Android also a notification.
+  - A task you assign to someone else leaves your lists, but stays in the group's screen.
+- **Under the hood.**
+  - One new database migration, `20261128000100_groups.sql`.
+  - Your own tasks still sync exactly as before.
+  - Group rows are numbered per group, so every member can pull "everything in this group since N". A new function, `sync_pull_groups`, does that, and live updates now also watch your groups.
+  - The database enforces every rule above itself. A refused edit on a device is put right from the server at the next sync.
+  - If the new app meets a database without this migration, it skips groups and syncs everything else as before.
+
+### How it was checked
+
+- **Database: `06_groups.test.sql`, 101 checks, four people.**
+  - Who can see, change, invite and remove.
+  - Private tasks reaching others only as hidden stubs, subtasks included.
+  - A private task's owner handing it back. Postgres needed `previous_owner_id` for this, or it refuses a change that hides the row from whoever made it.
+  - Removing, leaving, purging and deleting.
+  - No email address anywhere in what a member receives.
+- **Concurrency:** two people writing to one group at the same moment get ordered revisions. A third member reading in between misses nothing.
+- **App against the real database:** three simulated people sync through the real functions. They cover:
+  - assignment, private tasks and handing back;
+  - an edit the server refuses, which is put right;
+  - a shared personal task;
+  - removal and deletion.
+- **On one device:** 6 tests of the app's own rules, plus tests for the sharing rules and the assignment notification.
+- **In two browsers: `groups.py`, 24 checks** through the real screens, from choosing usernames to removing a member (see TESTING.md).
+- **No regressions:**
+  - The full web check passes: 103 of 103.
+  - All database tests pass.
+  - `npm run check` passes: 344 tests.
+  - While running it, a check of the calendar's week view turned out to fail whenever tomorrow is a Sunday. It failed the same way before this change. The check's expectation was wrong, not the app, and it is fixed.
+
+### Not yet proven
+
+- **Not on a phone yet.** In particular:
+  - the assignment notification with TaskFlow closed. It arrives at the next background sync, which Android times itself, usually 30 to 60 minutes;
+  - group tasks on the widgets;
+  - group tasks with the Google Calendar connection. They are built to be copied like your own, but this was not tested.
+- **Not against the real Supabase Realtime.** Live updates for groups rely on Supabase sending a group's counter only to its members, under the new row-level rule. The test stand-in imitates that.
+
+### Limits, by design
+
+- Making groups, inviting, joining and leaving need a connection; group tasks themselves work offline.
+- Tags, links and files on a group task are personal. A task picture made from a photo shows only to whoever added it.
+- A task cannot leave its group. Backups hold your own tasks, not group tasks.
+- If two people's phones each write to two different groups in the same instant, Postgres may stop one sync. That sync simply runs again.
+
+### Before installing
+
+1. Merge PR #12, then this PR.
+2. The workflow **Apply database migrations** then updates your Supabase project. Check it ran green before installing the new app.
+
+The order is forgiving: an app installed before the update keeps working without groups.
+
 ## Remaining work
 
 - [x] Phase 3: tasks, subtasks, projects, categories, tags, statuses, recurrence rules, quick add with natural language, search, filters, bulk edit, on local SQLite
@@ -524,6 +611,8 @@ Do [DEPLOY.md](DEPLOY.md) steps 2 to 5, in order. This change adds nothing to th
 - [ ] Phase 9 phone run: the brief's twelve scenarios on your phone (docs/TESTING.md)
 - [x] Phase 10: release signing, web deployment, guides (code complete)
 - [ ] Phase 10 setup: signing secrets, GitHub Pages, sign-in addresses, reinstall once (docs/DEPLOY.md)
+- [x] Usernames, groups, assigned and private tasks (code complete)
+- [ ] Groups: database update and the phone checklist (docs/TESTING.md)
 - [ ] Earlier phone checklists still open: Phase 6 (widgets), Phase 7 (calendar and Google), Phase 8, colours and pictures
 
 Smaller items carried forward:

@@ -87,6 +87,8 @@ function Gate() {
           <Stack.Screen name="google" />
           <Stack.Screen name="colours" />
           <Stack.Screen name="add" />
+          <Stack.Screen name="groups" />
+          <Stack.Screen name="group/[id]" />
         </Stack>
         <NoticeBar bottom={onTabs && !sidebar ? TAB_BAR_HEIGHT : 0} right={onTabs ? FAB_SPACE : 0} />
       </QuickAddProvider>

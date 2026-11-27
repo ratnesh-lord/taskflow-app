@@ -22,7 +22,7 @@ const j = (def: string) => ({ type: 'json' as const, default: def });
 export const SYNC_COLUMNS = ['id', 'user_id', 'created_at', 'updated_at', 'deleted_at', 'rev', 'field_ts'] as const;
 
 export const TABLES = {
-  profiles: { email: t(), name: t("''"), timezone: t("'UTC'"), settings: j("'{}'") },
+  profiles: { email: t(), name: t("''"), timezone: t("'UTC'"), settings: j("'{}'"), username: t() },
   projects: {
     name: t(), description: t("''"), color: t(), deadline: t(), status: t("'active'"), sort_order: r('0'),
   },
@@ -32,14 +32,16 @@ export const TABLES = {
     title: t(), description: t("''"), notes: t("''"), status: t("'inbox'"), priority: t("'medium'"),
     project_id: t(), category_id: t(), due_date: t(), due_time: t(), due_tz: t(), estimated_minutes: i(),
     completed_at: t(), rrule: t(), recur_until: t(), sort_order: r('0'), icon: t(), goal_id: t(),
+    group_id: t(), owner_id: t(), is_private: b('0'), created_by: t(), previous_owner_id: t(),
   },
   task_occurrences: {
     task_id: t(), occurrence_date: t(), status: t("'completed'"), completed_at: t(), moved_to_date: t(), moved_to_time: t(),
+    group_id: t(),
   },
-  subtasks: { task_id: t(), title: t(), is_completed: b('0'), sort_order: r('0') },
+  subtasks: { task_id: t(), title: t(), is_completed: b('0'), sort_order: r('0'), group_id: t() },
   reminders: {
     task_id: t(), kind: t("'absolute'"), remind_at: t(), offset_minutes: i(), notification_type: t("'reminder'"),
-    snoozed_until: t(), is_active: b('1'),
+    snoozed_until: t(), is_active: b('1'), group_id: t(),
   },
   task_tags: { task_id: t(), tag_id: t() },
   attachments: {
@@ -59,6 +61,13 @@ export const TABLES = {
   habit_logs: { habit_id: t(), log_date: t(), amount: i('1'), logged_at: t() },
   daily_notes: { note_date: t(), kind: t("'day'"), body: t("''"), planned_at: t() },
   focus_sessions: { task_id: t(), kind: t("'focus'"), started_at: t(), planned_minutes: i(), ended_at: t(), device_id: t() },
+  // Groups arrive through sync_pull_groups and are changed only through the
+  // group functions (src/data/groups.ts), never by an edit on the device.
+  groups: { name: t("''"), created_by: t() },
+  group_members: {
+    group_id: t(), member_id: t(), role: t("'member'"), status: t("'invited'"), username: t("''"), display_name: t("''"),
+    invited_by: t(), invited_by_name: t(),
+  },
 } satisfies Record<string, Columns>;
 
 /**
@@ -85,6 +94,17 @@ export const TIMESTAMP_COLUMNS: Readonly<Record<string, readonly string[]>> = {
 export type TableName = keyof typeof TABLES;
 export const TABLE_NAMES = Object.keys(TABLES) as TableName[];
 
+/** Tables that only the server writes (not in the server's sync_tables(), not in backups). */
+export const SERVER_ONLY_TABLES: readonly TableName[] = ['groups', 'group_members'];
+
+/** Tables whose rows can belong to a group (they carry group_id). */
+export const GROUP_TABLES: readonly TableName[] = ['tasks', 'subtasks', 'reminders', 'task_occurrences'];
+
+/** Columns kept on the device only (filled from extra fields the server sends). */
+export const LOCAL_ONLY_COLUMNS: Readonly<Partial<Record<TableName, readonly string[]>>> = {
+  group_members: ['invited_by_name'],
+};
+
 export function columnsOf(table: TableName): Columns {
   return TABLES[table];
 }
@@ -94,7 +114,13 @@ export function columnsOf(table: TableName): Columns {
  * them. The first migration leaves them out, so a new install and an
  * upgraded one end up the same.
  */
-const ADDED_LATER: Partial<Record<TableName, readonly string[]>> = { tasks: ['icon', 'goal_id'] };
+const ADDED_LATER: Partial<Record<TableName, readonly string[]>> = {
+  profiles: ['username'],
+  tasks: ['icon', 'goal_id', 'group_id', 'owner_id', 'is_private', 'created_by', 'previous_owner_id'],
+  task_occurrences: ['group_id'],
+  subtasks: ['group_id'],
+  reminders: ['group_id'],
+};
 
 function columnSql(name: string, c: { type: ColumnType; default?: string }): string {
   const sqlType = c.type === 'int' || c.type === 'bool' ? 'INTEGER' : c.type === 'real' ? 'REAL' : 'TEXT';
@@ -152,6 +178,15 @@ export const LOCAL_MIGRATIONS: string[] = [
     ...(['goals', 'habits', 'habit_logs', 'daily_notes', 'focus_sessions'] as const).map(createTable),
     'CREATE INDEX IF NOT EXISTS habit_logs_habit_idx ON habit_logs (habit_id, log_date);',
     'CREATE INDEX IF NOT EXISTS tasks_goal_idx ON tasks (goal_id);',
+  ].join('\n'),
+  // 4: usernames, groups and shared tasks (server migration 20261128000100).
+  [
+    addColumn('profiles', 'username'),
+    ...(['group_id', 'owner_id', 'is_private', 'created_by', 'previous_owner_id'] as const).map((c) => addColumn('tasks', c)),
+    ...(['task_occurrences', 'subtasks', 'reminders'] as const).map((t) => addColumn(t, 'group_id')),
+    ...(['groups', 'group_members'] as const).map(createTable),
+    'CREATE INDEX IF NOT EXISTS tasks_group_idx ON tasks (group_id);',
+    'CREATE INDEX IF NOT EXISTS group_members_group_idx ON group_members (group_id);',
   ].join('\n'),
 ];
 

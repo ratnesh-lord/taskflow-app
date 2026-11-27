@@ -21,7 +21,7 @@ import { Sheet } from '@/ui/Sheet';
 import { Text } from '@/ui/Text';
 import { space, typography } from '@/ui/tokens';
 
-type Defaults = Partial<Pick<TaskFields, 'projectId' | 'categoryId' | 'dueDate' | 'goalId'>>;
+type Defaults = Partial<Pick<TaskFields, 'projectId' | 'categoryId' | 'dueDate' | 'goalId'>> & { groupId?: string };
 
 const QuickAddContext = createContext<(defaults?: Defaults) => void>(() => {});
 
@@ -107,7 +107,9 @@ function QuickAddSheet({ defaults, onClose }: { defaults: Defaults | null; onClo
       }>
       <View style={{ gap: space.xs }}>
         <Text variant="caption" color="textSecondary" nativeID="quick-add-hint">
-          Type it the way you would say it
+          {defaults?.groupId
+            ? `Type it the way you would say it. It goes into ${data.groups.find((g) => g.id === defaults.groupId)?.name ?? 'the group'}; #tags and +projects stay personal, so they are left out.`
+            : 'Type it the way you would say it'}
         </Text>
         <TextInput
           accessibilityLabel="New task"

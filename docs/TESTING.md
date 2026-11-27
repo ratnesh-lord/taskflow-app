@@ -7,7 +7,7 @@ Nine layers of automated checks run on every push (GitHub Actions, workflows **C
 | Database tests | Access rules, merging, paging, purge, concurrency, on a real Postgres with the project's migrations; then the app's sync engine with two devices against those same functions | `npm run test:db` (after `npm ci`) |
 | Unit and screen tests | Dates, repeats, quick add, overdue and the Today counts, filters, the device database with undo, when to sync, export and restore, notification planning, cancelling snoozes of finished tasks, Mark completed from a notification, what the widgets show, widget colours matching the app's, the calendar views and drops, task colours (contrast) and pictures, habits and streaks, the focus timer, the Eisenhower matrix, analytics and planning, Google Calendar, Tasks and Drive against an in-memory Google, the edit clock, sign-in link parsing, session storage, the sign-in and sign-up screens | `npm test` |
 | Typecheck and lint | Types are sound; no rounded corner anywhere in the code | `npm run typecheck`, `npm run lint` |
-| Web end-to-end | The built web app, served below `/taskflow-app` as on GitHub Pages and driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, the calendar views and dragging tasks in them, colours and pictures (including a photo upload), Plan my day, habits, goals, the focus timer, the matrix, notes, the weekly review and analytics, sign out | `bash scripts/e2e/run.sh` |
+| Web end-to-end | Two people sharing a group in two browsers (`groups.py`). The built web app, served below `/taskflow-app` as on GitHub Pages and driven in Chrome: sign in, password reset, quick add, overdue, complete and undo, repeats, editing, filters, projects, storage across a reload, a second browser syncing live, offline and back, a two-device merge, export and restore, dark mode, the calendar views and dragging tasks in them, colours and pictures (including a photo upload), Plan my day, habits, goals, the focus timer, the matrix, notes, the weekly review and analytics, sign out | `bash scripts/e2e/run.sh` |
 | Web profile and desktop layout | A 2,000-task account: sign-in, first sync, reload, opening a 400-task list, scrolling and ticking, each with a time budget; then every screen at desktop width (nothing wider than the window, no rounded corners, the sidebar), with screenshots | `E2E_SCRIPT=profile.py E2E_SQL_TIMING=1 bash scripts/e2e/run.sh`, `E2E_SCRIPT=desktop.py bash scripts/e2e/run.sh` |
 | App-settings check | The Android build's check of the Supabase address and key: missing, malformed, secret, or refused by the project | `bash scripts/ci/check-app-settings.test.sh` |
 | Alarm and widget rules | The Kotlin alarm runtime's time-zone, due, late and summary rules, and the widgets' day, tick, deadline and next-reminder rules, on an ordinary JVM | `bash modules/taskflow-alarms/test-kotlin.sh` (needs `kotlinc`) |
@@ -22,8 +22,15 @@ Nine layers of automated checks run on every push (GitHub Actions, workflows **C
 - **`02_merge.test.sql`** is the database half of scenario 8. Two devices edit different fields (both survive), then the same field (the later edit wins, whichever arrives first, and the loser is kept in the history). It also covers deletes and restores, a phone with a wrong clock, invalid edits, a recurring occurrence completed on two devices, and the same tag created on two devices.
 - **`03_pull.test.sql`** pages through changes ten at a time and checks every row arrives exactly once, then covers incremental pulls, tombstones, the 90-day purge and the forced resync that follows it.
 - **`04_accounts.test.sql`** covers profile creation, device registration and account deletion.
+- **`06_groups.test.sql`** covers usernames and groups with four people (101 checks). It covers:
+  - usernames: format, uniqueness whatever the case, and that searching shows no email or id;
+  - invitations, and the rules for owners, admins and members;
+  - tasks assigned to someone, and who may change them;
+  - private tasks arriving only as hidden stubs, children included;
+  - a personal task moved into a group bringing its subtasks;
+  - removing a member, leaving, the purge mark of a group, and deleting a group.
 - **`05_productivity.test.sql`** covers Phase 8: goals and the tasks linked to them, habit schedules and targets, two phones logging a habit offline (both count), a day's note edited on two devices (merged field by field), focus sessions, and the purge of deleted habits and goals.
-- **`concurrency.sh`** runs two writers at the same moment and a reader between them, twice. It checks revisions are committed in order and the reader's cursor skips nothing.
+- **`concurrency.sh`** runs two writers at the same moment and a reader between them, twice, and once more with two different people writing to one group. It checks revisions are committed in order and the reader's cursor skips nothing.
 - **`src/data/sync.db.test.ts`** (run last, through Jest) gives two simulated devices their own SQLite databases and syncs them through `sync_push` and `sync_pull` in the same throwaway database, as the signed-in user. It covers the cases listed under Phase 4 in [PROGRESS.md](PROGRESS.md), and checks the app's tables match the server's exactly.
 
 To run them you need `psql` and a Postgres server you can create databases on:
@@ -38,7 +45,29 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres npm run test:db
 
 It needs Chrome and `pip install playwright` in addition to the database requirements above. Screenshots are written to `/tmp/taskflow-e2e`.
 
+`E2E_SCRIPT=groups.py bash scripts/e2e/run.sh` runs a second check with two people in two browsers (24 checks). Alice chooses a username, creates a group and invites Bob, who joins. Then:
+
+- Alice assigns him a task. He is told at once, and it appears in his Upcoming.
+- Her private task never reaches his browser, and a task she keeps is read-only for him.
+- He completes his task and she sees it done.
+- She removes him, and the group leaves his browser.
+
 It does not cover Google sign-in, the real Supabase sign-in service or the real Realtime service; the phone checklist does.
+
+## Phone checklist for groups
+
+Needs two accounts: yours on the phone, and a second one in the web app or on another phone. Install the newest build first, after the database update (see PROGRESS.md, Groups).
+
+1. **More** shows *No username yet*. Choose one; it shows as `Username: @…`.
+2. In the second account, choose a username, make a group and invite your username. Within a few seconds, without reopening the app, **More > Groups** shows *1 invitation*. Tap **Join**.
+3. With TaskFlow open on the phone, in the second account add a task to the group with a time later today, assign it to you, and set a reminder 5 minutes before. Within a few seconds the phone shows *… assigned you “…”* in the app, and a notification *… assigned you a task*. Tapping the notification opens the task.
+3a. Close TaskFlow (swipe it away) and assign another task to yourself from the second account. The notification arrives at the phone's next background sync. Android chooses when that runs, usually within 30 to 60 minutes. Note how long it took.
+4. The task is in Today and on the Today widget, marked with the group's name. Its reminder rings on the phone, not in the second account.
+5. Tick it off on the widget. The second account sees it done.
+6. Open a group task the second account kept for itself: the Notice says who can change it, and the checkbox is greyed out.
+7. In the second account, make a task private and assigned to nobody. It never appears on the phone.
+8. Tap **Hand back to …** on a task assigned to you. It leaves your Today.
+9. In the second account, remove you from the group. On the phone the group and its tasks disappear.
 
 ## Phase 9 phone run: the brief's twelve scenarios
 

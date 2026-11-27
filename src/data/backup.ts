@@ -2,19 +2,24 @@
  * Export and restore: every task, project, category, tag, subtask, reminder,
  * repeat record, link and saved filter of the account, as one JSON file.
  *
+ * Tasks in a group belong to the group, not to the account, so they (and
+ * their subtasks, reminders and repeat records) are not part of a backup.
+ *
  * Restoring merges: each item in the file is brought back to how it was in
  * the file (and undeleted if it was deleted since); items made after the
  * backup are left alone. It is one transaction, so it can be undone, and its
  * changes sync to the account like any other edit.
  */
-import { columnsOf, TABLE_NAMES, type TableName } from './schema';
+import { columnsOf, SERVER_ONLY_TABLES, TABLE_NAMES, type TableName } from './schema';
 import type { Row, Store, UndoLog } from './store';
 
 export const BACKUP_FORMAT = 'taskflow-backup';
 export const BACKUP_VERSION = 1;
 
-/** The profile belongs to the account, not to a backup. */
-const TABLES = TABLE_NAMES.filter((t) => t !== 'profiles');
+/** The profile belongs to the account, groups to their members: neither is in a backup. */
+const TABLES = TABLE_NAMES.filter((t) => t !== 'profiles' && !SERVER_ONLY_TABLES.includes(t));
+
+const inGroup = (r: Record<string, unknown>) => typeof r.group_id === 'string' && r.group_id !== '';
 
 export type BackupRow = Record<string, unknown> & { id: string };
 
@@ -37,7 +42,7 @@ function clean(table: TableName, row: Row): BackupRow {
 export async function makeBackup(store: Store, opts: { now?: Date; appVersion?: string } = {}): Promise<Backup> {
   const tables: Backup['tables'] = {};
   for (const table of TABLES) {
-    const rows = await store.rows(table);
+    const rows = (await store.rows(table)).filter((r) => !inGroup(r));
     if (rows.length) tables[table] = rows.map((r) => clean(table, r)).sort((a, b) => (a.id < b.id ? -1 : 1));
   }
   return {
@@ -103,6 +108,7 @@ export async function restoreBackup(store: Store, b: Backup): Promise<{ changed:
     for (const table of TABLES) {
       const cols = columnsOf(table);
       for (const row of b.tables[table] ?? []) {
+        if (inGroup(row)) continue;
         const patch: Record<string, unknown> = {};
         for (const [name, col] of Object.entries(cols)) {
           if (!(name in row)) continue;
@@ -110,6 +116,7 @@ export async function restoreBackup(store: Store, b: Backup): Promise<{ changed:
           patch[name] = row[name];
         }
         const existing = await tx.get(table, row.id);
+        if (existing && inGroup(existing)) continue; // shared with a group since: left as the group has it
         if (existing?.deleted_at) await tx.restore(table, row.id);
         await tx.write(table, row.id, patch);
         changed += 1;
