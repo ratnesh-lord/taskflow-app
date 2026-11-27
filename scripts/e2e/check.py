@@ -370,7 +370,12 @@ with sync_playwright() as p:
     role(page, "radio", "Week", exact=True).first.click()
     expect(role(page, "button", re.compile(r"^Complete AWS certification revision, 19:00$")).filter(visible=True).first).to_be_visible()
     week_plants = role(page, "button", re.compile(r"^Water the plants$")).filter(visible=True)
-    expect(week_plants.first).to_be_visible()
+    # The week runs Monday to Sunday. Today's watering is done and tomorrow's now has a time, so an
+    # all-day one shows only when the week has a day after tomorrow (not when tomorrow is Sunday).
+    if tomorrow.weekday() < 6:
+        expect(week_plants.first).to_be_visible()
+    else:
+        expect(week_plants).to_have_count(0)
     page.screenshot(path=f"{SHOTS}/21-calendar-week.png")
     aws_week = role(page, "button", re.compile(r"^Complete AWS certification revision, 19:00$")).filter(visible=True).first
     column = (412 - 2 * 20 - 44) / 7
