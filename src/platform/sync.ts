@@ -42,6 +42,10 @@ export const supabaseTransport: SyncTransport = {
   async pullGroups(cursors: Record<string, number>, limit: number): Promise<GroupPullReply> {
     try {
       const { data, error } = await getSupabase().rpc('sync_pull_groups', { p_cursors: cursors, p_limit: limit });
+      // A database that has not had the groups migration yet: sync everything else, as before.
+      if (error && (error.code === 'PGRST202' || /could not find the function/i.test(error.message))) {
+        return { pages: [], member_of: [], invites: { groups: [], group_members: [] } };
+      }
       if (error) throw failure(error.message);
       return data as GroupPullReply;
     } catch (e) {

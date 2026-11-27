@@ -107,6 +107,12 @@ jobs:
           E2E_SHOTS: ${{ runner.temp }}/e2e-screens
           E2E_API_LOG: ${{ runner.temp }}/e2e-api.log
         run: bash scripts/e2e/run.sh
+      - name: Two people sharing tasks in a group, in two browsers
+        env:
+          E2E_SCRIPT: groups.py
+          E2E_SHOTS: ${{ runner.temp }}/e2e-screens
+          E2E_API_LOG: ${{ runner.temp }}/e2e-groups-api.log
+        run: bash scripts/e2e/run.sh
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@v5
