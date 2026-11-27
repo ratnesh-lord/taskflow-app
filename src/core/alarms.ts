@@ -23,7 +23,7 @@ export type AlarmItem = { taskId: string; occurrenceDate: LocalDate | null; titl
 
 export type PlannedAlarm = {
   key: string;
-  kind: 'reminder' | 'morning' | 'evening' | 'habit' | 'focus';
+  kind: 'reminder' | 'morning' | 'evening' | 'habit' | 'focus' | 'assigned';
   /** Wall-clock time in the phone's zone, "YYYY-MM-DDTHH:MM". */
   local?: string;
   /** A fixed instant (ms since 1970), for reminders set for an exact moment. */
@@ -90,7 +90,12 @@ export type PlanOptions = {
   projectName?: (id: string) => string | undefined;
   /** This device's id: only the device that started a focus session rings at its end. */
   deviceId?: string;
+  /** Group tasks just assigned to me by someone else (src/data/assignments.ts). */
+  assigned?: readonly AssignedNotice[];
 };
+
+/** "Alice assigned you a task": shown a few seconds after the assignment reaches this device. */
+export type AssignedNotice = { taskId: string; title: string; by: string; at: number };
 
 /** Habits and focus sessions, when the plan should include them. */
 export type ProductivityData = {
@@ -228,6 +233,16 @@ export function planAlarms(data: Snapshot & { reminders: readonly ReminderRecord
       title: s.kind === 'focus' ? 'Focus session done' : 'Break over',
       body: s.kind === 'focus' ? (task ? `${titleWithEmoji(task)}. Time for a break.` : 'Time for a break.') : 'Ready for the next session?',
       link: 'taskflow://focus',
+    });
+  }
+
+  // Tasks just assigned to me. Kept in the plan for a while after they are due,
+  // so a replan in the meantime does not cancel them; once past, the runtime
+  // counts them as shown.
+  for (const a of opts.assigned ?? []) {
+    out.push({
+      key: `a:${a.taskId}:${a.at}`, kind: 'assigned', at: a.at, channel: 'reminders',
+      title: `${a.by} assigned you a task`, body: a.title, taskId: a.taskId, link: `taskflow://task/${a.taskId}`,
     });
   }
 

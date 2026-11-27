@@ -10,7 +10,7 @@
  * the Android app shows them.
  */
 import { minutesToTime } from '@/core/dates';
-import { closedSnoozes, planAlarms, readSummarySettings, type Snooze } from '@/core/alarms';
+import { type AssignedNotice, closedSnoozes, planAlarms, readSummarySettings, type Snooze } from '@/core/alarms';
 import type { Actions } from '@/data/actions';
 import type { DataSnapshot } from '@/data/snapshot';
 import { usesHour12 } from '@/ui/format';
@@ -54,7 +54,11 @@ let askedThisRun = false;
  * Plan and hand over every notification, and the widgets' data.
  * Returns how many are planned and when the next one is.
  */
-export async function replan(data: DataSnapshot, takenAt: number): Promise<{ alarms: number; next: number | null } | null> {
+export async function replan(
+  data: DataSnapshot,
+  takenAt: number,
+  assigned: readonly AssignedNotice[] = [],
+): Promise<{ alarms: number; next: number | null } | null> {
   if (!alarms) return null;
   const nowDate = new Date();
   const now = {
@@ -70,6 +74,7 @@ export async function replan(data: DataSnapshot, takenAt: number): Promise<{ ala
     summaries: readSummarySettings(data.profile?.settings ?? {}),
     hour12: usesHour12(),
     projectName: (id) => projects.get(id),
+    assigned,
   });
   // Widget data first: the plan below forgets taps older than [takenAt], and the
   // widgets hide rows ticked off on them until data reflecting the tap arrives.

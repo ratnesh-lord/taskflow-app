@@ -14,6 +14,7 @@ import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 
 import { Actions } from '@/data/actions';
+import { checkAssignments } from '@/data/assignments';
 import { openExpoDb } from '@/data/expo-db';
 import { loadSnapshot } from '@/data/snapshot';
 import { Store } from '@/data/store';
@@ -50,7 +51,11 @@ export async function backgroundWork(): Promise<'done' | 'signed-out'> {
     const actions = new Actions(store, { newId: () => Crypto.randomUUID().toLowerCase() });
     const { taken } = await takeNotificationTaps(actions);
     await new SyncEngine(store, supabaseTransport, { deviceId }).run();
-    if (remindersOnDevice) await replan(await loadSnapshot(store), taken);
+    if (remindersOnDevice) {
+      const snapshot = await loadSnapshot(store);
+      const { notices } = await checkAssignments(store, snapshot, Date.now());
+      await replan(snapshot, taken, notices);
+    }
   } finally {
     await store.close();
   }
