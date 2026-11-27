@@ -33,6 +33,14 @@ export type TaskRecord = {
   icon?: string | null;
   /** The goal it counts towards, if any (src/core/goals.ts). */
   goalId?: string | null;
+  /** The group it is shared with; null or missing for a personal task (src/core/sharing.ts). */
+  groupId?: string | null;
+  /** Who it is assigned to in its group; null means its creator has it. */
+  ownerId?: string | null;
+  /** Who created it (a user id); may be missing on personal tasks. */
+  createdBy?: string | null;
+  /** In a group: seen only by its creator and owner. */
+  isPrivate?: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

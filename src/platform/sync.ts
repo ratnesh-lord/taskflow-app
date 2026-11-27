@@ -3,11 +3,12 @@
  *
  *   transport       sync_push and sync_pull, called as the signed-in user, so
  *                   row-level security applies to every row.
- *   watchAccount    a Realtime subscription to this account's sync_state row.
- *                   Its revision goes up whenever any device saves a change;
- *                   when another device did it, this one pulls.
+ *   watchAccount    a Realtime subscription to this account's sync_state row
+ *                   and to the counters of its groups. A revision goes up
+ *                   whenever any device saves a change; when another device
+ *                   did it, this one pulls.
  */
-import type { PullReply, PushOp, PushReply, SyncTransport } from '@/data/sync';
+import type { GroupPullReply, PullReply, PushOp, PushReply, SyncTransport } from '@/data/sync';
 
 import { getSupabase } from './supabase';
 
@@ -38,6 +39,15 @@ export const supabaseTransport: SyncTransport = {
       throw e instanceof Error && e.message === 'No connection' ? e : failure(e instanceof Error ? e.message : String(e));
     }
   },
+  async pullGroups(cursors: Record<string, number>, limit: number): Promise<GroupPullReply> {
+    try {
+      const { data, error } = await getSupabase().rpc('sync_pull_groups', { p_cursors: cursors, p_limit: limit });
+      if (error) throw failure(error.message);
+      return data as GroupPullReply;
+    } catch (e) {
+      throw e instanceof Error && e.message === 'No connection' ? e : failure(e instanceof Error ? e.message : String(e));
+    }
+  },
 };
 
 /**
@@ -51,6 +61,14 @@ export function watchAccount(userId: string, deviceId: string, onRemoteChange: (
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'sync_state', filter: `user_id=eq.${userId}` },
+      (payload: { new?: { origin_device?: string | null } }) => {
+        if (payload.new?.origin_device !== deviceId) onRemoteChange();
+      },
+    )
+    // Row-level security sends only the counters of groups this account is in.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'group_sync_state' },
       (payload: { new?: { origin_device?: string | null } }) => {
         if (payload.new?.origin_device !== deviceId) onRemoteChange();
       },

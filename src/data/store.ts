@@ -16,7 +16,7 @@
 import { type ClockState, HybridClock } from '@/core/hlc';
 
 import { type Db, SerialQueue, type SqlValue } from './db';
-import { columnsOf, decode, encode, LOCAL_MIGRATIONS, TABLE_NAMES, type TableName, TIME_COLUMNS, TIMESTAMP_COLUMNS } from './schema';
+import { columnsOf, decode, encode, GROUP_TABLES, LOCAL_MIGRATIONS, TABLE_NAMES, type TableName, TIME_COLUMNS, TIMESTAMP_COLUMNS } from './schema';
 
 export type Row = Record<string, unknown> & { id: string };
 
@@ -67,7 +67,10 @@ export type OutboxOp = {
 
 const CLOCK_KEY = 'clock';
 
-/** A row as sync_pull sends it: every column, with JSON types. */
+/**
+ * A row as sync_pull sends it: every column, with JSON types. A group row
+ * the account may no longer see arrives as { id, rev, hidden: true }.
+ */
 export type RemoteRow = Record<string, unknown> & { id: string };
 
 /** Changes from sync_pull, by table. */
@@ -331,9 +334,18 @@ export class Store {
           const nowIso = this.now().toISOString();
           const touched = new Map<TableName, Set<string> | null>();
           for (const table of TABLE_NAMES) {
-            const rows = (changes[table] ?? []).filter((r) => typeof r.id === 'string');
+            const all = (changes[table] ?? []).filter((r) => typeof r.id === 'string');
+            if (!all.length) continue;
+            touched.set(table, new Set(all.map((r) => r.id as string)));
+            // Rows this account may no longer see (a group task made private) are removed outright.
+            const hidden = all.filter((r) => r.hidden === true).map((r) => r.id as string);
+            for (let i = 0; i < hidden.length; i += 400) {
+              const part = hidden.slice(i, i + 400);
+              await this.db.run(`DELETE FROM ${table} WHERE id IN (${part.map(() => '?').join(', ')})`, part);
+              applied += part.length;
+            }
+            const rows = hidden.length ? all.filter((r) => r.hidden !== true) : all;
             if (!rows.length) continue;
-            touched.set(table, new Set(rows.map((r) => r.id as string)));
             const cols = columnsOf(table);
 
             // The rows already here, read in batches rather than one at a time.
@@ -419,7 +431,7 @@ export class Store {
               applied += 1;
             }
             await flush();
-            if (rows.length > CHANGE_LOG_ROWS) touched.set(table, null);
+            if (all.length > CHANGE_LOG_ROWS) touched.set(table, null);
           }
           await this.db.run('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [CLOCK_KEY, JSON.stringify(this.clock.snapshot())]);
           await this.db.exec('COMMIT');
@@ -434,6 +446,69 @@ export class Store {
         if (applied) this.emit('sync');
         return applied;
       });
+  }
+
+  /**
+   * Forget a group on this device: the group, its members and every row in
+   * it, with any edits to them still waiting to be sent (the server would
+   * refuse them). Used when the account leaves or loses the group, and before
+   * pulling a group again from the start.
+   */
+  dropGroup(groupId: string): Promise<void> {
+    return this.queue
+      .run(async () => {
+        await this.db.exec('BEGIN');
+        try {
+          for (const table of GROUP_TABLES) {
+            await this.db.run(`DELETE FROM outbox WHERE tbl = ? AND row_id IN (SELECT id FROM ${table} WHERE group_id = ?)`, [table, groupId]);
+            await this.db.run(`DELETE FROM ${table} WHERE group_id = ?`, [groupId]);
+          }
+          await this.db.run('DELETE FROM group_members WHERE group_id = ?', [groupId]);
+          await this.db.run('DELETE FROM groups WHERE id = ?', [groupId]);
+          await this.db.exec('COMMIT');
+          this.bump(new Map([...GROUP_TABLES, 'group_members', 'groups'].map((t) => [t as TableName, null])));
+        } catch (e) {
+          await this.db.exec('ROLLBACK').catch(() => {});
+          throw e;
+        }
+      })
+      .then(() => this.emit('sync'));
+  }
+
+  /** The group a row belongs to on this device, or null. */
+  groupIdOf(table: TableName, id: string): Promise<string | null> {
+    if (!GROUP_TABLES.includes(table)) return Promise.resolve(null);
+    return this.queue.run(async () => {
+      const [row] = await this.db.all<{ group_id: string | null }>(`SELECT group_id FROM ${table} WHERE id = ?`, [id]);
+      return row?.group_id ?? null;
+    });
+  }
+
+  /**
+   * Set fields of a row on this device only (no outbox, no undo), to match
+   * what the server is known to hold, e.g. after it refused a change.
+   */
+  correct(table: TableName, id: string, patch: Record<string, unknown>): Promise<void> {
+    const cols = columnsOf(table);
+    const keys = Object.keys(patch).filter((k) => k in cols);
+    if (!keys.length) return Promise.resolve();
+    return this.queue
+      .run(async () => {
+        await this.db.run(`UPDATE ${table} SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, [
+          ...keys.map((k) => encode(cols[k].type, patch[k])),
+          id,
+        ]);
+        this.bump(new Map([[table, new Set([id])]]));
+      })
+      .then(() => this.emit('sync'));
+  }
+
+  /** Ids of the groups this device holds rows for. */
+  localGroupIds(): Promise<string[]> {
+    return this.queue.run(async () => {
+      const raw = await this.db.all<{ id: string }>('SELECT id FROM groups UNION SELECT DISTINCT group_id AS id FROM tasks WHERE group_id IS NOT NULL');
+      return raw.map((r) => r.id);
+    });
   }
 
   /** Drop every synced row (not the outbox), before pulling everything again. */
@@ -585,6 +660,11 @@ export class Store {
           return;
         }
 
+        // A new subtask, reminder or repeat record belongs to its task's group, as on the server.
+        if (patch.group_id === undefined && typeof patch.task_id === 'string' && GROUP_TABLES.includes(table) && table !== 'tasks') {
+          const parent = await getRaw('tasks', patch.task_id);
+          if (parent?.group_id) patch = { ...patch, group_id: parent.group_id };
+        }
         const ts = this.clock.now();
         const keys = Object.keys(patch).filter((k) => patch[k] !== undefined);
         const fieldTs = Object.fromEntries(keys.map((k) => [k, ts]));

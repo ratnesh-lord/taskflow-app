@@ -10,6 +10,7 @@ import type { GoalRecord } from '@/core/goals';
 import type { HabitLogRecord, HabitRecord } from '@/core/habits';
 import { readFilter, type TaskFilter } from '@/core/filters';
 import type { OccurrenceRecord } from '@/core/recurrence';
+import { type GroupRole, isMine } from '@/core/sharing';
 import type { Priority, TaskStatus } from '@/core/types';
 
 import type { TableName } from './schema';
@@ -36,8 +37,40 @@ export type OccurrenceRow = OccurrenceRecord & { id: string; taskId: string };
 /** A day's note ("day") or a week's review ("week", dated by its Monday). */
 export type NoteRecord = { id: string; kind: 'day' | 'week'; date: string; body: string; plannedAt: string | null; updatedAt: string };
 
+export type MemberRecord = {
+  id: string;
+  groupId: string;
+  memberId: string;
+  username: string;
+  displayName: string;
+  role: GroupRole;
+  status: 'invited' | 'active';
+};
+export type GroupRecord = {
+  id: string;
+  name: string;
+  createdBy: string | null;
+  /** My role, or null while I am only invited. */
+  myRole: GroupRole | null;
+  /** Active members first (owner, admins, members), then open invitations. */
+  members: MemberRecord[];
+};
+export type InviteRecord = { groupId: string; groupName: string; invitedBy: string };
+
 export type DataSnapshot = {
+  /** The signed-in account. */
+  me: { userId: string; username: string | null; name: string };
+  /**
+   * My tasks: personal ones, and group tasks assigned to me (or created by
+   * me and assigned to nobody). Every list, widget and reminder uses these.
+   */
   tasks: TaskRecord[];
+  /** Every task in my groups that I can see, mine included. */
+  groupTasks: TaskRecord[];
+  /** Groups I am in, by name. */
+  groups: GroupRecord[];
+  /** Open invitations to groups. */
+  invites: InviteRecord[];
   occurrences: Map<string, OccurrenceRow[]>;
   projects: ProjectRecord[];
   categories: CategoryRecord[];
@@ -64,6 +97,13 @@ export type DataSnapshot = {
   profile: { timezone: string; settings: Record<string, unknown> } | null;
 };
 
+/** A task by id, mine or another group member's. */
+export function findTask(data: Pick<DataSnapshot, 'tasks' | 'groupTasks'>, id: string): TaskRecord | undefined {
+  return data.tasks.find((t) => t.id === id) ?? data.groupTasks.find((t) => t.id === id);
+}
+
+const ROLE_ORDER: Record<GroupRole, number> = { owner: 0, admin: 1, member: 2 };
+
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 const strOrNull = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
@@ -87,6 +127,10 @@ export function toTask(r: Row): TaskRecord {
     recurUntil: strOrNull(r.recur_until),
     icon: strOrNull(r.icon),
     goalId: strOrNull(r.goal_id),
+    groupId: strOrNull(r.group_id),
+    ownerId: strOrNull(r.owner_id),
+    createdBy: strOrNull(r.created_by),
+    isPrivate: r.is_private === true,
     sortOrder: num(r.sort_order),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
@@ -185,6 +229,8 @@ export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
     rowsOf(store, 'calendar_links'),
   ]);
   const [profileRow] = await rowsOf(store, 'profiles');
+  const [groupRows, memberRows] = await Promise.all([rowsOf(store, 'groups'), rowsOf(store, 'group_members')]);
+  const me = store.userId;
 
   const liveTasks = new Set(tasks.map((t) => t.id));
   const liveGoals = new Set(goals.map((g) => g.id));
@@ -200,8 +246,37 @@ export async function loadSnapshot(store: Store): Promise<DataSnapshot> {
     tagMap.set(str(r.task_id), list);
   }
 
+  const allTasks = tasks.map(toTask).map((t) => (t.goalId && !liveGoals.has(t.goalId) ? { ...t, goalId: null } : t));
+  const members = memberRows
+    .map((r) => ({
+      id: r.id, groupId: str(r.group_id), memberId: str(r.member_id), username: str(r.username), displayName: str(r.display_name),
+      role: (r.role === 'owner' || r.role === 'admin' ? r.role : 'member') as GroupRole,
+      status: (r.status === 'active' ? 'active' : 'invited') as MemberRecord['status'],
+    }))
+    .sort((a, b) => (a.status === b.status ? 0 : a.status === 'active' ? -1 : 1) || ROLE_ORDER[a.role] - ROLE_ORDER[b.role]
+      || (a.displayName || a.username).localeCompare(b.displayName || b.username));
+  const membersOf = groupBy(members, (m) => m.groupId);
+  const groups: GroupRecord[] = [];
+  const invites: InviteRecord[] = [];
+  for (const g of groupRows) {
+    const list = membersOf.get(g.id) ?? [];
+    const mine = list.find((m) => m.memberId === me);
+    if (mine?.status === 'invited') {
+      const raw = memberRows.find((r) => r.id === mine.id);
+      invites.push({ groupId: g.id, groupName: str(g.name), invitedBy: str(raw?.invited_by_name) });
+      continue;
+    }
+    groups.push({ id: g.id, name: str(g.name), createdBy: strOrNull(g.created_by), myRole: mine?.role ?? null, members: list });
+  }
+  groups.sort((a, b) => a.name.localeCompare(b.name));
+  const inMyGroups = new Set(groups.map((g) => g.id));
+
   return {
-    tasks: tasks.map(toTask).map((t) => (t.goalId && !liveGoals.has(t.goalId) ? { ...t, goalId: null } : t)),
+    me: { userId: me, username: profileRow ? strOrNull(profileRow.username) : null, name: profileRow ? str(profileRow.name) : '' },
+    tasks: allTasks.filter((t) => isMine(t, me)),
+    groupTasks: allTasks.filter((t) => t.groupId && inMyGroups.has(t.groupId)),
+    groups,
+    invites,
     occurrences: group(
       occurrences.filter(ofLiveTask).map((r) => ({
         id: r.id,

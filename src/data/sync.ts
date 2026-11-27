@@ -9,6 +9,10 @@
  *   2. pull  through sync_pull, page by page, from the last revision seen.
  *            When the server says this device is too far behind (or ahead,
  *            after a database restore), it drops its copy and pulls it all.
+ *   3. groups through sync_pull_groups, each group from its own revision
+ *            (group rows are numbered per group, not per account). Groups
+ *            the account is no longer in are dropped from the device, and
+ *            open invitations are kept so the Groups screen can show them.
  *
  * Pushing first means a pull never brings back a row whose edit from here
  * was refused for being older: the outbox no longer holds that edit, so the
@@ -16,7 +20,8 @@
  *
  * The transport is passed in, so tests can run this against real Postgres.
  */
-import type { OutboxOp, RemoteChanges, Store } from './store';
+import { GROUP_TABLES, type TableName } from './schema';
+import type { OutboxOp, RemoteChanges, RemoteRow, Store } from './store';
 
 export type PushStatus = 'applied' | 'stale' | 'missing' | 'rejected';
 
@@ -35,9 +40,22 @@ export type PullReply =
   | { reset: true; rev: number }
   | { reset: false; changes: RemoteChanges; next_since: number; rev: number; has_more: boolean };
 
+export type GroupPage =
+  | { id: string; reset: true; rev: number }
+  | { id: string; reset: false; changes: RemoteChanges; next_since: number; rev: number; has_more: boolean };
+
+export type GroupPullReply = {
+  pages: GroupPage[];
+  /** Every group the account is an active member of. */
+  member_of: string[];
+  /** Open invitations: the group rows and the account's own (invited) membership rows. */
+  invites: { groups: RemoteRow[]; group_members: RemoteRow[] };
+};
+
 export interface SyncTransport {
   push(deviceId: string, ops: PushOp[]): Promise<PushReply>;
   pull(since: number, limit: number): Promise<PullReply>;
+  pullGroups(cursors: Record<string, number>, limit: number): Promise<GroupPullReply>;
 }
 
 export type SyncProblem = { at: string; table: string; id: string; error: string };
@@ -53,6 +71,8 @@ export type SyncReport = {
 };
 
 export const PULL_SINCE_KEY = 'pull_since';
+/** { "<group id>": last revision pulled } */
+export const GROUP_CURSORS_KEY = 'group_cursors';
 export const PROBLEMS_KEY = 'sync_problems';
 const MAX_PROBLEMS = 20;
 
@@ -86,7 +106,82 @@ export class SyncEngine {
       await this.store.setMeta(PULL_SINCE_KEY, String(since));
       if (!reply.has_more) break;
     }
+    await this.pullGroups(report);
     return report;
+  }
+
+  /** Groups whose copy here is known to be wrong (the server refused an edit in it). */
+  private readonly refetch = new Set<string>();
+
+  private async pullGroups(report: SyncReport): Promise<void> {
+    let cursors: Record<string, number> = {};
+    if (!report.reset) {
+      try {
+        const raw = JSON.parse((await this.store.getMeta(GROUP_CURSORS_KEY)) ?? '{}') as unknown;
+        if (raw && typeof raw === 'object') {
+          for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (typeof v === 'number') cursors[k] = v;
+        }
+      } catch {
+        cursors = {};
+      }
+    }
+    for (const id of this.refetch) {
+      await this.store.dropGroup(id);
+      delete cursors[id];
+    }
+    this.refetch.clear();
+
+    const resets = new Map<string, number>();
+    for (let round = 0; round < 1000; round += 1) {
+      const reply = await this.transport.pullGroups(cursors, this.opts.pullLimit ?? 1000);
+      const member = new Set(reply.member_of ?? []);
+      const invites = reply.invites ?? { groups: [], group_members: [] };
+      const invited = new Set((invites.groups ?? []).map((g) => g.id));
+
+      if (round === 0) {
+        for (const id of await this.store.localGroupIds()) {
+          if (!member.has(id) && !invited.has(id)) await this.store.dropGroup(id);
+        }
+        for (const id of Object.keys(cursors)) if (!member.has(id)) delete cursors[id];
+        if (invited.size) {
+          report.pulled += await this.store.applyRemote({ groups: invites.groups, group_members: invites.group_members });
+        }
+      }
+
+      let more = false;
+      for (const page of reply.pages ?? []) {
+        if (page.reset) {
+          const n = (resets.get(page.id) ?? 0) + 1;
+          resets.set(page.id, n);
+          if (n > 1) throw new Error('The server asked to start a group over twice in one sync.');
+          await this.store.dropGroup(page.id);
+          cursors[page.id] = 0;
+          more = true;
+          continue;
+        }
+        report.pulled += await this.store.applyRemote(page.changes);
+        cursors[page.id] = page.next_since;
+        if (page.has_more) more = true;
+      }
+      await this.store.setMeta(GROUP_CURSORS_KEY, JSON.stringify(cursors));
+      if (!more) return;
+    }
+  }
+
+  /**
+   * After the server refused an edit to a row in a group: a refused move into
+   * a group leaves the task personal here too; anything else means this
+   * device's copy of the group is off, so the group is pulled again.
+   */
+  private async afterRejection(op: OutboxOp): Promise<void> {
+    if (!GROUP_TABLES.includes(op.table as TableName)) return;
+    const groupId = await this.store.groupIdOf(op.table, op.id);
+    if (!groupId) return;
+    if (op.table === 'tasks' && 'group_id' in op.patch) {
+      await this.store.correct('tasks', op.id, { group_id: null, owner_id: null, is_private: false });
+      return;
+    }
+    this.refetch.add(groupId);
   }
 
   private async push(report: SyncReport): Promise<void> {
@@ -109,6 +204,7 @@ export class SyncEngine {
         done.push(op.seq);
         if (r.status === 'rejected') {
           problems.push({ at: (this.opts.now ?? (() => new Date()))().toISOString(), table: op.table, id: op.id, error: r.error ?? 'Refused' });
+          await this.afterRejection(op);
         }
       }
       if (done.length === 0) throw new Error('The server did not answer for any of the changes sent.');
