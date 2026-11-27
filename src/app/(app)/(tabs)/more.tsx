@@ -7,7 +7,9 @@ import { signOut } from '@/platform/auth';
 import { widgetsOnDevice } from '@/platform/widgets';
 import { BackupPanel } from '@/components/BackupPanel';
 import { SyncPanel } from '@/components/SyncPanel';
-import { useData } from '@/state/data';
+import { cleanUsername, USERNAME_HINT } from '@/core/sharing';
+import { NameSheet } from '@/components/NameSheet';
+import { useData, useGroupCall } from '@/state/data';
 import { useNow } from '@/state/now';
 import { useSession } from '@/state/session';
 import { type ThemePreference, useTheme } from '@/state/theme';
@@ -35,6 +37,8 @@ export default function More() {
   const { preference, setPreference } = useTheme();
   const [confirming, setConfirming] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const call = useGroupCall();
 
   const { now } = useNow();
   const today = now.date;
@@ -64,6 +68,24 @@ export default function More() {
         </Text>
         {name ? <Text variant="bodyStrong">{name}</Text> : null}
         <Text variant="body">{user?.email ?? 'Signed in'}</Text>
+        <Text variant="small" color="textSecondary">
+          {data.me.username ? `Username: @${data.me.username}` : 'No username yet: choose one to share tasks with other people.'}
+        </Text>
+        <View style={{ alignItems: 'flex-start', paddingTop: space.xs }}>
+          <Button variant="secondary" label={data.me.username ? 'Change username' : 'Choose a username'} onPress={() => setNaming(true)} />
+        </View>
+      </View>
+
+      <View>
+        <Text variant="label" color="textSecondary" style={{ paddingBottom: space.xs }}>
+          People
+        </Text>
+        <MenuRow
+          icon="people"
+          label="Groups"
+          detail={data.invites.length ? plural(data.invites.length, 'invitation') : data.groups.length ? String(data.groups.length) : undefined}
+          onPress={() => router.push('/groups')}
+        />
       </View>
 
       <View>
@@ -119,6 +141,31 @@ export default function More() {
       <Text variant="caption" color="textSecondary">
         TaskFlow {Constants.expoConfig?.version ?? ''}
       </Text>
+
+      <NameSheet
+        visible={naming}
+        title="Your username"
+        label="Username"
+        initial={data.me.username ?? ''}
+        saveLabel="Save username"
+        plain
+        maxLength={21}
+        hint={USERNAME_HINT}
+        onClose={() => setNaming(false)}
+        onSave={async (text) => {
+          const clean = cleanUsername(text);
+          if (!clean) {
+            await call(() => Promise.reject(new Error(`“${text}” cannot be a username. ${USERNAME_HINT}`)));
+            return;
+          }
+          if (clean === data.me.username) {
+            setNaming(false);
+            return;
+          }
+          const saved = await call((g) => g.claimUsername(clean), `You are now @${clean}`);
+          if (saved.ok) setNaming(false);
+        }}
+      />
     </Screen>
   );
 }

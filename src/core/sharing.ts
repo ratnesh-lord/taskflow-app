@@ -24,6 +24,8 @@ export type GroupRole = 'owner' | 'admin' | 'member';
 
 export const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
+export const USERNAME_HINT = '3 to 20 characters: lower-case letters, digits or _. People find you by it; they never see your email.';
+
 /** A username as the server stores it, or null when it cannot be one. */
 export function cleanUsername(text: string): string | null {
   const u = text.trim().toLowerCase().replace(/^@/, '');

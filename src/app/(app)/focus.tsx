@@ -11,6 +11,7 @@ import {
 import { SmallButton } from '@/components/ActionRow';
 import { Meter } from '@/components/BarChart';
 import { TaskPickerSheet } from '@/components/TaskPickerSheet';
+import { findTask } from '@/data/snapshot';
 import { useData, useRun } from '@/state/data';
 import { useTheme } from '@/state/theme';
 import { getDeviceId } from '@/platform/device';
@@ -89,7 +90,7 @@ export default function Focus() {
   const justEnded = !running && last && !isRunning(last, nowMs) && nowMs - plannedEndMs(last) < 15 * 60_000 && !last.endedAt;
 
   const taskTitle = (id: string | null) => {
-    const t = id ? data.tasks.find((x) => x.id === id) : undefined;
+    const t = id ? findTask(data, id) : undefined;
     return t ? titleWithEmoji(t) : null;
   };
   const chosen = taskTitle(taskId);

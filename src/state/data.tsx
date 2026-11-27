@@ -5,6 +5,8 @@ import { AppState } from 'react-native';
 import { Actions, InvalidInput } from '@/data/actions';
 import type { AssignedNotice } from '@/core/alarms';
 import { checkAssignments } from '@/data/assignments';
+import type { GroupService } from '@/data/groups';
+import { groupService } from '@/platform/groups';
 import { openExpoDb } from '@/data/expo-db';
 import { type DataSnapshot, loadSnapshot } from '@/data/snapshot';
 import { type SyncReason, SyncScheduler, type SyncStatus } from '@/data/scheduler';
@@ -326,5 +328,31 @@ export function useRun() {
       }
     },
     [notify],
+  );
+}
+
+export type GroupCallResult<T> = { ok: true; value: T } | { ok: false };
+
+/**
+ * Runs a group change on the server (src/platform/groups.ts), shows how it
+ * went, and syncs so the change arrives here. When it fails, the message
+ * says why and the result is { ok: false }.
+ */
+export function useGroupCall() {
+  const { notify, sync } = useDataContext();
+  const { syncNow } = sync;
+  return useCallback(
+    async <T,>(work: (service: GroupService) => Promise<T>, message?: string): Promise<GroupCallResult<T>> => {
+      try {
+        const value = await work(groupService);
+        if (message) notify(message);
+        syncNow();
+        return { ok: true, value };
+      } catch (e) {
+        notify(e instanceof Error ? e.message : String(e), { tone: 'error' });
+        return { ok: false };
+      }
+    },
+    [notify, syncNow],
   );
 }

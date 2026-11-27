@@ -205,3 +205,16 @@ describe('habit reminders and the focus timer', () => {
     expect(list[0]).toMatchObject({ kind: 'morning', link: 'taskflow://plan' });
   });
 });
+
+describe('tasks assigned to me', () => {
+  it('become a notification at the given moment, opening the task', () => {
+    const list = planAlarms(
+      { tasks: [], occurrences: new Map(), reminders: [] },
+      { now, nowMs, summaries: off, hour12: false, assigned: [{ taskId: 't1', title: 'Bins out', by: 'Alice', at: nowMs + 3000 }] },
+    );
+    expect(list).toEqual([
+      expect.objectContaining({ key: `a:t1:${nowMs + 3000}`, kind: 'assigned', at: nowMs + 3000, title: 'Alice assigned you a task', body: 'Bins out', link: 'taskflow://task/t1' }),
+    ]);
+    expect(list[0].actions).toBeUndefined();
+  });
+});

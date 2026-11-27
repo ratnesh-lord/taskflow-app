@@ -231,7 +231,15 @@ export class Actions {
   }
 
   /** A task from a quick-add line. The project is matched by name, or created. */
-  async createFromQuickAdd(parsed: QuickAdd, defaults: Partial<TaskFields> = {}): Promise<{ id: string; undo: UndoLog }> {
+  async createFromQuickAdd(parsed: QuickAdd, defaults: Partial<TaskFields> & { groupId?: string } = {}): Promise<{ id: string; undo: UndoLog }> {
+    if (defaults.groupId) {
+      // Into a group: projects and tags are personal, so they are left out.
+      return this.createTask({
+        title: parsed.title, groupId: defaults.groupId, dueDate: parsed.dueDate ?? defaults.dueDate ?? null,
+        dueTime: parsed.dueTime ?? null, rrule: parsed.rrule, priority: parsed.priority ?? undefined, estimatedMinutes: parsed.estimatedMinutes,
+        reminders: parsed.reminders,
+      });
+    }
     let projectId = defaults.projectId ?? null;
     if (parsed.project) {
       const wanted = normaliseTagName(parsed.project).replace(/-/g, '');

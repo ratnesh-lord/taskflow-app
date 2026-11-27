@@ -36,7 +36,8 @@ export type IconName =
   | 'note'
   | 'grid'
   | 'sun'
-  | 'review';
+  | 'review'
+  | 'people';
 
 function shapes(name: IconName, color: string): ReactNode {
   switch (name) {
@@ -200,6 +201,15 @@ function shapes(name: IconName, color: string): ReactNode {
       return <Path d="M9 5L4 10l5 5M4 10h11a5 5 0 010 10h-3" />;
     case 'flag':
       return <Path d="M5 21V4h12l-2 4 2 4H5" />;
+    case 'people':
+      // Two square heads and shoulders, the second behind the first.
+      return (
+        <>
+          <Rect x={5} y={5} width={6} height={6} />
+          <Path d="M2 20v-5h12v5" />
+          <Path d="M14 5h5v6h-3M17 14h5v6h-6" />
+        </>
+      );
   }
 }
 
